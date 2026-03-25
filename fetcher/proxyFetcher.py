@@ -232,6 +232,583 @@ class ProxyFetcher(object):
     #         for proxy in proxies:
     #             yield ':'.join(proxy)
 
+    @staticmethod
+    def freeProxyScdn():
+        """
+        SCDN代理池 https://proxy.scdn.io/
+        提供API接口获取代理
+        """
+        import requests
+
+        # 方式1: 使用API获取（每次最多20个）
+        api_url = "https://proxy.scdn.io/api/get_proxy.php?protocol=http&count=20"
+        try:
+            resp = requests.get(api_url, timeout=15, verify=False)
+            data = resp.json()
+            if data.get('code') == 200:
+                proxies = data.get('data', {}).get('proxies', [])
+                for proxy in proxies:
+                    yield proxy
+        except Exception as e:
+            pass
+
+        # 方式2: 从text页面获取更多代理
+        text_url = "https://proxy.scdn.io/text.php"
+        try:
+            resp = requests.get(text_url, timeout=30, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy12():
+        """ Proxifly GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/http/data.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy13():
+        """ JetKai GitHub代理列表 - HTTP """
+        import requests
+        url = "https://raw.githubusercontent.com/jetkai/proxy-list/main/online-proxies/txt/proxies-http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line and not line.startswith('#'):
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy14():
+        """ ProxyScrape API """
+        import requests
+        url = "https://api.proxyscrape.com/v2/?request=get&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy15():
+        """ Seladb GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/seladb/ProxyList/master/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy16():
+        """ TheSpeedX PROXIER """
+        import requests
+        url = "https://raw.githubusercontent.com/TheSpeedX/PROXIER/master/proxier.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy17():
+        """ Monosans GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/monosans/proxy-list/main/proxies/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy18():
+        """ ClarkeTM GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/clarketm/proxy-list/master/proxy-list-raw.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy19():
+        """ GfpCom GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/gfpcom/free-proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy20():
+        """ Fate0 GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/fate0/proxylist/master/proxy_list.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy21():
+        """ TopChina GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/TopChina/proxy-list/master/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy22():
+        """ Databay Labs GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/databay-labs/free-proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy23():
+        """ Casa-LS GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/casa-ls/proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy24():
+        """ Iplocate GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/iplocate/free-proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy25():
+        """ LeChann GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/LeChann/ProxyList/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy26():
+        """ Rdavydov GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/rdavydov/proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy27():
+        """ Mertguvencli GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/mertguvencli/free-proxy-list/main/http-proxies.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy28():
+        """ Zaeem20 GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/Zaeem20/FREE_PROXIES_LIST/main/http_proxies.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy29():
+        """ R00tee GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/r00tee/Proxy-List/master/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy30():
+        """ MrMarble GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/MrMarble/proxy-list/master/https.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy31():
+        """ Fyvri GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/fyvri/fresh-proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy32():
+        """ Anonym0usWork1221 GitHub代理列表 - HTTP """
+        import requests
+        url = "https://raw.githubusercontent.com/Anonym0usWork1221/Free-Proxies/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy33():
+        """ ProbiusOfficial GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/ProbiusOfficial/Free-Proxy-List/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy34():
+        """ V2era GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/v2era/Proxy-List/master/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy35():
+        """ S4wfit GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/s4wfit/Proxy-List/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy36():
+        """ Watchttvv GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/watchttvv/free-proxy-list/main/proxy_list.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy37():
+        """ Roosterkid GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/roosterkid/openproxylist/main/proxies.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy38():
+        """ Shjalayeri GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/shjalayeri/proxy-list/main/proxy_list.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy39():
+        """ ALIILAPRO GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/ALIILAPRO/Proxy-List/master/proxy.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy40():
+        """ Officialpiyush GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/officialpiyush/Proxy-List/main/https.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy41():
+        """ Abovlms GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/abovlms/proxylist/main/proxy_list.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy42():
+        """ Hidesslayer GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/hidesslayer/proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy43():
+        """ Zevtyardt GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/zevtyardt/proxy-list/main/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy44():
+        """ Ethereum-ex GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/ethereum-ex/proxy-list/master/http.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy45():
+        """ Wklchris GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/wklchris/Proxy-List/master/proxy_list.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy46():
+        """ Mmpx12 GitHub代理列表 """
+        import requests
+        url = "https://raw.githubusercontent.com/mmpx12/Proxy-List/master/proxies.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy47():
+        """ OpenProxyList API """
+        import requests
+        url = "https://openproxylist.com/list.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy48():
+        """ ProxyScrape SOCKS4 """
+        import requests
+        url = "https://api.proxyscrape.com/v2/?request=get&protocol=socks4&timeout=10000&country=all&ssl=all&anonymity=all"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy49():
+        """ ProxyScrape SOCKS5 """
+        import requests
+        url = "https://api.proxyscrape.com/v2/?request=get&protocol=socks5&timeout=10000&country=all&ssl=all&anonymity=all"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
+    @staticmethod
+    def freeProxy50():
+        """ Proxifly HTTPS代理 """
+        import requests
+        url = "https://raw.githubusercontent.com/proxifly/free-proxy-list/main/proxies/protocols/https/data.txt"
+        try:
+            resp = requests.get(url, timeout=20, verify=False)
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if line and ':' in line:
+                    yield line
+        except Exception as e:
+            pass
+
 
 if __name__ == '__main__':
     p = ProxyFetcher()

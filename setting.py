@@ -37,7 +37,7 @@ PORT = 5010
 # example:
 #      Redis: redis://:password@ip:port/db
 #      Ssdb:  ssdb://:password@ip:port
-DB_CONN = 'redis://:pwd@127.0.0.1:6379/0'
+DB_CONN = 'redis://:pwd@127.0.0.1:6380/0'
 
 # proxy table name
 TABLE_NAME = 'use_proxy'
@@ -55,7 +55,47 @@ PROXY_FETCHER = [
     "freeProxy08",
     "freeProxy09",
     "freeProxy10",
-    "freeProxy11"
+    "freeProxy11",
+    "freeProxyScdn",
+    "freeProxy12",
+    "freeProxy13",
+    "freeProxy14",
+    "freeProxy15",
+    "freeProxy16",
+    "freeProxy17",
+    "freeProxy18",
+    "freeProxy19",
+    "freeProxy20",
+    "freeProxy21",
+    "freeProxy22",
+    "freeProxy23",
+    "freeProxy24",
+    "freeProxy25",
+    "freeProxy26",
+    "freeProxy27",
+    "freeProxy28",
+    "freeProxy29",
+    "freeProxy30",
+    "freeProxy31",
+    "freeProxy32",
+    "freeProxy33",
+    "freeProxy34",
+    "freeProxy35",
+    "freeProxy36",
+    "freeProxy37",
+    "freeProxy38",
+    "freeProxy39",
+    "freeProxy40",
+    "freeProxy41",
+    "freeProxy42",
+    "freeProxy43",
+    "freeProxy44",
+    "freeProxy45",
+    "freeProxy46",
+    "freeProxy47",
+    "freeProxy48",
+    "freeProxy49",
+    "freeProxy50"
 ]
 
 # ############# proxy validator #################
