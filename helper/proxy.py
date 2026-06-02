@@ -18,7 +18,8 @@ import json
 class Proxy(object):
 
     def __init__(self, proxy, fail_count=0, region="", anonymous="",
-                 source="", check_count=0, last_status="", last_time="", https=False):
+                 source="", check_count=0, last_status="", last_time="",
+                 https=False, speed=0.0, use_count=0):
         self._proxy = proxy
         self._fail_count = fail_count
         self._region = region
@@ -28,6 +29,8 @@ class Proxy(object):
         self._last_status = last_status
         self._last_time = last_time
         self._https = https
+        self._speed = speed
+        self._use_count = use_count
 
     @classmethod
     def createFromJson(cls, proxy_json):
@@ -40,7 +43,9 @@ class Proxy(object):
                    check_count=_dict.get("check_count", 0),
                    last_status=_dict.get("last_status", ""),
                    last_time=_dict.get("last_time", ""),
-                   https=_dict.get("https", False)
+                   https=_dict.get("https", False),
+                   speed=_dict.get("speed", 0.0),
+                   use_count=_dict.get("use_count", 0)
                    )
 
     @property
@@ -68,6 +73,11 @@ class Proxy(object):
         """ 代理来源 """
         return '/'.join(self._source)
 
+    @source.setter
+    def source(self, value):
+        if value:
+            self._source = value.split('/')
+
     @property
     def check_count(self):
         """ 代理检测次数 """
@@ -89,6 +99,16 @@ class Proxy(object):
         return self._https
 
     @property
+    def speed(self):
+        """ 代理响应速度(秒) """
+        return self._speed
+
+    @property
+    def use_count(self):
+        """ 代理使用次数 """
+        return self._use_count
+
+    @property
     def to_dict(self):
         """ 属性字典 """
         return {"proxy": self.proxy,
@@ -99,7 +119,9 @@ class Proxy(object):
                 "source": self.source,
                 "check_count": self.check_count,
                 "last_status": self.last_status,
-                "last_time": self.last_time}
+                "last_time": self.last_time,
+                "speed": self.speed,
+                "use_count": self.use_count}
 
     @property
     def to_json(self):
@@ -125,6 +147,14 @@ class Proxy(object):
     @https.setter
     def https(self, value):
         self._https = value
+
+    @speed.setter
+    def speed(self, value):
+        self._speed = value
+
+    @use_count.setter
+    def use_count(self, value):
+        self._use_count = value
 
     @region.setter
     def region(self, value):

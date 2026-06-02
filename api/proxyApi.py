@@ -17,6 +17,8 @@
 __author__ = 'JHao'
 
 import platform
+import time as _time
+import json as _json
 from werkzeug.wrappers import Response
 from flask import Flask, jsonify, request
 
@@ -24,6 +26,7 @@ from util.six import iteritems
 from helper.proxy import Proxy
 from handler.proxyHandler import ProxyHandler
 from handler.configHandler import ConfigHandler
+from handler.refreshHandler import RefreshHandler
 
 app = Flask(__name__)
 conf = ConfigHandler()
@@ -46,7 +49,10 @@ api_list = [
     {"url": "/pop", "params": "", "desc": "get and delete a proxy"},
     {"url": "/delete", "params": "proxy: 'e.g. 127.0.0.1:8080'", "desc": "delete an unable proxy"},
     {"url": "/all", "params": "type: ''https'|''", "desc": "get all proxy from proxy pool"},
-    {"url": "/count", "params": "", "desc": "return proxy count"}
+    {"url": "/count", "params": "", "desc": "return proxy count"},
+    {"url": "/get_status", "params": "", "desc": "return proxy pool status info"},
+    {"url": "/proxy_use_count", "params": "limit: int (default 10)", "desc": "proxy use count ranking"},
+    {"url": "/export", "params": "format: 'json'|'txt', available: '1'|'0', https: '1'|'0'", "desc": "export proxies"},
     # 'refresh': 'refresh proxy pool',
 ]
 
@@ -60,7 +66,10 @@ def index():
 def get():
     https = request.args.get("type", "").lower() == 'https'
     proxy = proxy_handler.get(https)
-    return proxy.to_dict if proxy else {"code": 0, "src": "no proxy"}
+    if proxy:
+        proxy_handler.incrementUseCount(proxy)
+        return proxy.to_dict
+    return {"code": 0, "src": "no proxy"}
 
 
 @app.route('/pop/')
@@ -101,6 +110,125 @@ def getCount():
         for source in proxy.source.split('/'):
             source_dict[source] = source_dict.get(source, 0) + 1
     return {"http_type": http_type_dict, "source": source_dict, "count": len(proxies)}
+
+
+@app.route('/get_status/')
+def getStatus():
+    """ 返回代理池状态信息 """
+    proxies = proxy_handler.getAll()
+    total = len(proxies)
+
+    # HTTP/HTTPS distribution
+    http_count = 0
+    https_count = 0
+    # Source distribution
+    source_dict = {}
+    # Speed statistics
+    speeds = []
+    # Health: proxies with last_status=True
+    healthy_count = 0
+
+    for proxy in proxies:
+        if proxy.https:
+            https_count += 1
+        else:
+            http_count += 1
+        for source in proxy.source.split('/'):
+            if source:
+                source_dict[source] = source_dict.get(source, 0) + 1
+        if proxy.speed and proxy.speed > 0:
+            speeds.append(proxy.speed)
+        if proxy.last_status is True:
+            healthy_count += 1
+
+    avg_speed = round(sum(speeds) / len(speeds), 3) if speeds else 0.0
+    min_speed = round(min(speeds), 3) if speeds else 0.0
+    max_speed = round(max(speeds), 3) if speeds else 0.0
+
+    return {
+        "total": total,
+        "http_count": http_count,
+        "https_count": https_count,
+        "healthy_count": healthy_count,
+        "unhealthy_count": total - healthy_count,
+        "source_count": source_dict,
+        "speed": {
+            "avg": avg_speed,
+            "min": min_speed,
+            "max": max_speed,
+        },
+        "timestamp": _time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@app.route('/proxy_use_count/')
+def proxyUseCount():
+    """ 返回代理使用次数排行 """
+    limit = request.args.get("limit", 10, type=int)
+    if limit < 1:
+        limit = 10
+    if limit > 100:
+        limit = 100
+    proxies = proxy_handler.getUseCountRanking(limit)
+    return {
+        "ranking": [_.to_dict for _ in proxies],
+        "limit": limit
+    }
+
+
+@app.route('/export/')
+def exportProxies():
+    """
+    导出代理列表
+    params:
+      format: 'json' (default) or 'txt'
+      available: '1' to only export available proxies (last_status=True)
+      https: '1' to only export HTTPS proxies
+    """
+    export_format = request.args.get("format", "json").lower().strip()
+    only_available = request.args.get("available", "0") == "1"
+    only_https = request.args.get("https", "0") == "1"
+
+    # Get filtered proxies
+    https_flag = True if only_https else False
+    proxies = proxy_handler.getAll(https=https_flag)
+
+    # Apply additional filters
+    filtered = []
+    for proxy in proxies:
+        if only_available and proxy.last_status is not True:
+            continue
+        if only_https and not proxy.https:
+            continue
+        filtered.append(proxy)
+
+    if export_format == 'txt':
+        # Plain text: one proxy per line (ip:port)
+        lines = [p.proxy for p in filtered]
+        txt_content = "\n".join(lines)
+        return Response(txt_content, mimetype='text/plain',
+                        headers={"Content-Disposition": "attachment; filename=proxies.txt"})
+    else:
+        # JSON format
+        result = [p.to_dict for p in filtered]
+        response = app.response_class(
+            response=_json.dumps(result, ensure_ascii=False, indent=2),
+            status=200,
+            mimetype='application/json'
+        )
+        response.headers["Content-Disposition"] = "attachment; filename=proxies.json"
+        return response
+
+
+@app.route('/refresh_pool/')
+def refreshPool():
+    """ 手动触发代理池刷新 """
+    try:
+        refresh_handler = RefreshHandler()
+        refresh_handler.refresh()
+        return {"code": 1, "msg": "refresh triggered"}
+    except Exception as e:
+        return {"code": 0, "msg": str(e)}
 
 
 def runFlask():

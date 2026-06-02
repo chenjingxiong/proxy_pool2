@@ -48,10 +48,21 @@ class ProxyHandler(object):
 
     def put(self, proxy):
         """
-        put proxy into use proxy
+        put proxy into use proxy (insert or update)
         :return:
         """
         self.db.put(proxy)
+
+    def putIfNotExists(self, proxy):
+        """
+        put proxy into pool only if not exists (deduplication)
+        :param proxy: Proxy obj
+        :return: True if inserted, False if already exists
+        """
+        if self.exists(proxy):
+            return False
+        self.db.put(proxy)
+        return True
 
     def delete(self, proxy):
         """
@@ -84,3 +95,22 @@ class ProxyHandler(object):
         """
         total_use_proxy = self.db.getCount()
         return {'count': total_use_proxy}
+
+    def incrementUseCount(self, proxy):
+        """
+        increment proxy use_count by 1
+        :param proxy: Proxy obj
+        :return:
+        """
+        proxy.use_count = proxy.use_count + 1
+        self.db.put(proxy)
+
+    def getUseCountRanking(self, limit=10):
+        """
+        return proxy ranking sorted by use_count (descending)
+        :param limit: number of proxies to return
+        :return:
+        """
+        proxies = self.getAll()
+        proxies.sort(key=lambda p: p.use_count, reverse=True)
+        return proxies[:limit]

@@ -14,6 +14,7 @@
 """
 __author__ = 'JHao'
 
+import time
 from util.six import Empty
 from threading import Thread
 from datetime import datetime
@@ -39,13 +40,18 @@ class DoValidator(object):
         Returns:
             Proxy Object
         """
+        start_time = time.time()
         http_r = cls.httpValidator(proxy)
+        elapsed = time.time() - start_time
         https_r = False if not http_r else cls.httpsValidator(proxy)
+        if https_r:
+            elapsed = time.time() - start_time
 
         proxy.check_count += 1
         proxy.last_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         proxy.last_status = True if http_r else False
         if http_r:
+            proxy.speed = round(elapsed, 3)
             if proxy.fail_count > 0:
                 proxy.fail_count -= 1
             proxy.https = True if https_r else False
@@ -53,6 +59,7 @@ class DoValidator(object):
                 proxy.region = cls.regionGetter(proxy) if cls.conf.proxyRegion else ""
         else:
             proxy.fail_count += 1
+            proxy.speed = 0.0
         return proxy
 
     @classmethod
@@ -114,11 +121,10 @@ class _ThreadChecker(Thread):
 
     def __ifRaw(self, proxy):
         if proxy.last_status:
-            if self.proxy_handler.exists(proxy):
-                self.log.info('RawProxyCheck - {}: {} exist'.format(self.name, proxy.proxy.ljust(23)))
+            if self.proxy_handler.putIfNotExists(proxy):
+                self.log.info('RawProxyCheck - {}: {} pass, inserted'.format(self.name, proxy.proxy.ljust(23)))
             else:
-                self.log.info('RawProxyCheck - {}: {} pass'.format(self.name, proxy.proxy.ljust(23)))
-                self.proxy_handler.put(proxy)
+                self.log.info('RawProxyCheck - {}: {} exist, skipped'.format(self.name, proxy.proxy.ljust(23)))
         else:
             self.log.info('RawProxyCheck - {}: {} fail'.format(self.name, proxy.proxy.ljust(23)))
 

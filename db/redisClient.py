@@ -41,7 +41,7 @@ class RedisClient(object):
         :return:
         """
         self.name = ""
-        kwargs.pop("username")
+        kwargs.pop("username", None)
         self.__conn = Redis(connection_pool=BlockingConnectionPool(decode_responses=True,
                                                                    timeout=5,
                                                                    socket_timeout=5,

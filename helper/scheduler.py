@@ -22,6 +22,7 @@ from helper.check import Checker
 from handler.logHandler import LogHandler
 from handler.proxyHandler import ProxyHandler
 from handler.configHandler import ConfigHandler
+from handler.refreshHandler import runRefreshJob
 
 
 def __runProxyFetch():
@@ -53,6 +54,7 @@ def runScheduler():
 
     scheduler.add_job(__runProxyFetch, 'interval', minutes=4, id="proxy_fetch", name="proxy采集")
     scheduler.add_job(__runProxyCheck, 'interval', minutes=2, id="proxy_check", name="proxy检查")
+    scheduler.add_job(runRefreshJob, 'interval', minutes=5, id="proxy_refresh", name="proxy刷新")
     executors = {
         'default': {'type': 'threadpool', 'max_workers': 20},
         'processpool': ProcessPoolExecutor(max_workers=5)

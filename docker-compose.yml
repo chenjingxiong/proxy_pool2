@@ -1,14 +1,39 @@
-version: '2'
+version: "3.8"
+
 services:
-  proxy_pool:
+  redis:
+    image: redis:7-alpine
+    container_name: proxy_pool_redis
+    command: redis-server --requirepass pwd --port 6380
+    ports:
+      - "6380:6380"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "pwd", "-p", "6380", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  app:
     build: .
-    container_name: proxy_pool
+    container_name: proxy_pool_app
     ports:
       - "5010:5010"
-    links:
-      - proxy_redis
     environment:
-      DB_CONN: "redis://@proxy_redis:6379/0"
-  proxy_redis:
-    image: "redis"
-    container_name: proxy_redis
+      - DB_CONN=redis://:pwd@redis:6380/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5010/count/')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+volumes:
+  redis_data:
