@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Proxy Pool Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0f1117;color:#e0e0e0;min-height:100vh}
+.header{background:#1a1d29;border-bottom:1px solid #2a2d3a;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:20px;color:#7c8aff;letter-spacing:1px}
+.header .status{font-size:13px;color:#888}
+.tabs{display:flex;background:#1a1d29;border-bottom:1px solid #2a2d3a;padding:0 24px}
+.tab{padding:12px 20px;cursor:pointer;color:#888;font-size:14px;border-bottom:2px solid transparent;transition:all .2s}
+.tab:hover{color:#bbb}
+.tab.active{color:#7c8aff;border-bottom-color:#7c8aff}
+.content{padding:24px;max-width:1400px;margin:0 auto}
+.panel{display:none}
+.panel.active{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+.card{background:#1a1d29;border:1px solid #2a2d3a;border-radius:8px;padding:16px}
+.card .label{font-size:12px;color:#888;margin-bottom:4px}
+.card .value{font-size:28px;font-weight:700;color:#7c8aff}
+.card .sub{font-size:12px;color:#666;margin-top:4px}
+.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:16px;margin-bottom:24px}
+.chart-box{background:#1a1d29;border:1px solid #2a2d3a;border-radius:8px;padding:16px}
+.chart-box h3{font-size:14px;color:#aaa;margin-bottom:12px}
+table{width:100%;border-collapse:collapse;background:#1a1d29;border-radius:8px;overflow:hidden}
+th{background:#22253a;color:#888;font-size:12px;padding:10px 12px;text-align:left;position:sticky;top:0}
+td{padding:8px 12px;font-size:13px;border-top:1px solid #2a2d3a}
+tr:hover td{background:#1e2133}
+.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+.badge.builtin{background:#1a3a5c;color:#5b9bd5}
+.badge.url_text{background:#1a3c2a;color:#5bd58a}
+.badge.dynamic{background:#3c2a1a;color:#d58a5b}
+.badge.on{background:#1a3c2a;color:#5bd58a}
+.badge.off{background:#3c1a1a;color:#d55b5b}
+.api-item{background:#1a1d29;border:1px solid #2a2d3a;border-radius:8px;padding:16px;margin-bottom:12px}
+.api-item h3{color:#7c8aff;font-size:14px;margin-bottom:8px}
+.api-item .url{color:#5bd58a;font-family:monospace;font-size:13px;margin-bottom:6px}
+.api-item .desc{color:#888;font-size:13px;margin-bottom:8px}
+.api-item pre{background:#0f1117;border-radius:4px;padding:10px;font-size:12px;color:#aaa;overflow-x:auto}
+.table-wrap{max-height:600px;overflow-y:auto;border-radius:8px}
+.loading{text-align:center;padding:40px;color:#666}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>Proxy Pool Dashboard</h1>
+  <div class="status" id="lastUpdate">-</div>
+</div>
+<div class="tabs">
+  <div class="tab active" data-tab="sources">代理源管理</div>
+  <div class="tab" data-tab="stats">代理统计</div>
+  <div class="tab" data-tab="api">API 文档</div>
+  <div class="tab" data-tab="activity">每日动态</div>
+</div>
+<div class="content">
+
+<!-- Tab: Sources -->
+<div class="panel active" id="panel-sources">
+  <div class="cards" id="sourceCards"></div>
+  <div class="table-wrap">
+    <table><thead><tr><th>名称</th><th>类型</th><th>描述</th><th>来源文件</th><th>贡献代理数</th><th>状态</th></tr></thead>
+    <tbody id="sourceTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Tab: Stats -->
+<div class="panel" id="panel-stats">
+  <div class="cards" id="statCards"></div>
+  <div class="charts">
+    <div class="chart-box"><h3>HTTP / HTTPS 分布</h3><canvas id="chartProtocol"></canvas></div>
+    <div class="chart-box"><h3>健康率</h3><canvas id="chartHealth"></canvas></div>
+    <div class="chart-box"><h3>速度分布</h3><canvas id="chartSpeed"></canvas></div>
+    <div class="chart-box"><h3>Top 10 代理源贡献</h3><canvas id="chartTopSources"></canvas></div>
+  </div>
+</div>
+
+<!-- Tab: API -->
+<div class="panel" id="panel-api">
+  <div id="apiDocs"></div>
+</div>
+
+<!-- Tab: Activity -->
+<div class="panel" id="panel-activity">
+  <div class="charts">
+    <div class="chart-box"><h3>AI 搜索历史</h3>
+      <table><thead><tr><th>时间</th><th>发现数</th><th>直接搜索</th><th>源探索</th></tr></thead>
+      <tbody id="aiLogTable"></tbody></table>
+    </div>
+    <div class="chart-box"><h3>每日新增代理</h3><canvas id="chartDaily"></canvas></div>
+  </div>
+</div>
+
+</div>
+
+<script>
+const API_BASE = '';
+let charts = {};
+
+// --- Tab switching ---
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+    t.classList.add('active');
+    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+  });
+});
+
+// --- Helpers ---
+async function fetchJSON(url) {
+  const r = await fetch(API_BASE + url);
+  return r.json();
+}
+
+function destroyChart(id) {
+  if (charts[id]) { charts[id].destroy(); charts[id] = null; }
+}
+
+// --- Sources ---
+async function loadSources() {
+  const data = await fetchJSON('/api/sources/');
+  const sources = data.sources || [];
+  const builtin = sources.filter(s => s.type === 'builtin').length;
+  const ai = sources.filter(s => s.type === 'url_text').length;
+  const dynamic = sources.filter(s => s.type === 'dynamic').length;
+  const totalContrib = sources.reduce((a, s) => a + s.contributed, 0);
+
+  document.getElementById('sourceCards').innerHTML = `
+    <div class="card"><div class="label">总源数</div><div class="value">${sources.length}</div></div>
+    <div class="card"><div class="label">内置源</div><div class="value">${builtin}</div></div>
+    <div class="card"><div class="label">AI 发现源</div><div class="value">${ai}</div></div>
+    <div class="card"><div class="label">动态源</div><div class="value">${dynamic}</div></div>
+    <div class="card"><div class="label">总贡献代理</div><div class="value">${totalContrib}</div></div>`;
+
+  const tbody = document.getElementById('sourceTable');
+  tbody.innerHTML = sources.map(s => `<tr>
+    <td style="font-family:monospace">${s.name}</td>
+    <td><span class="badge ${s.type}">${s.type}</span></td>
+    <td>${s.description || '-'}</td>
+    <td style="font-size:11px;color:#666">${s.source_file || '-'}</td>
+    <td>${s.contributed}</td>
+    <td><span class="badge ${s.enabled ? 'on' : 'off'}">${s.enabled ? '启用' : '禁用'}</span></td>
+  </tr>`).join('');
+}
+
+// --- Stats ---
+async function loadStats() {
+  const d = await fetchJSON('/api/dashboard/status/');
+
+  document.getElementById('statCards').innerHTML = `
+    <div class="card"><div class="label">代理总数</div><div class="value">${d.total}</div></div>
+    <div class="card"><div class="label">HTTP</div><div class="value">${d.http_count}</div></div>
+    <div class="card"><div class="label">HTTPS</div><div class="value">${d.https_count}</div></div>
+    <div class="card"><div class="label">健康率</div><div class="value">${d.health_rate}%</div>
+      <div class="sub">${d.healthy_count} 健康 / ${d.unhealthy_count} 不健康</div></div>
+    <div class="card"><div class="label">平均速度</div><div class="value">${d.speed.avg}s</div>
+      <div class="sub">min ${d.speed.min}s / max ${d.speed.max}s</div></div>`;
+
+  // Protocol pie
+  destroyChart('chartProtocol');
+  charts.chartProtocol = new Chart(document.getElementById('chartProtocol'), {
+    type: 'doughnut',
+    data: { labels: ['HTTP', 'HTTPS'], datasets: [{ data: [d.http_count, d.https_count],
+      backgroundColor: ['#5b9bd5', '#d58a5b'] }] },
+    options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } } }
+  });
+
+  // Health pie
+  destroyChart('chartHealth');
+  charts.chartHealth = new Chart(document.getElementById('chartHealth'), {
+    type: 'doughnut',
+    data: { labels: ['健康', '不健康'], datasets: [{ data: [d.healthy_count, d.unhealthy_count],
+      backgroundColor: ['#5bd58a', '#d55b5b'] }] },
+    options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } } }
+  });
+
+  // Speed bar
+  const sb = d.speed.distribution;
+  destroyChart('chartSpeed');
+  charts.chartSpeed = new Chart(document.getElementById('chartSpeed'), {
+    type: 'bar',
+    data: { labels: Object.keys(sb), datasets: [{ data: Object.values(sb),
+      backgroundColor: '#7c8aff' }] },
+    options: { responsive: true, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888' } } } }
+  });
+
+  // Top sources bar
+  const ts = d.top_sources || [];
+  destroyChart('chartTopSources');
+  charts.chartTopSources = new Chart(document.getElementById('chartTopSources'), {
+    type: 'bar',
+    data: { labels: ts.map(x => x.name), datasets: [{ data: ts.map(x => x.count),
+      backgroundColor: '#5bd58a' }] },
+    options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
+      scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888', font: { size: 10 } } } } }
+  });
+}
+
+// --- API Docs ---
+function loadAPIDocs() {
+  const apis = [
+    { url: 'GET /get/?type=https', desc: '获取一个代理', params: 'type: https（可选）', example: '/get/', resp: '{"proxy": "1.2.3.4:8080", "https": false, ...}' },
+    { url: 'GET /pop/?type=https', desc: '获取并删除一个代理', params: 'type: https（可选）', example: '/pop/', resp: '{"proxy": "1.2.3.4:8080", ...}' },
+    { url: 'GET /delete/?proxy=ip:port', desc: '删除指定代理', params: 'proxy: ip:port', example: '/delete/?proxy=1.2.3.4:8080', resp: '{"code": 0, "src": "success"}' },
+    { url: 'GET /all/?type=https', desc: '获取所有代理', params: 'type: https（可选）', example: '/all/', resp: '[{"proxy": "1.2.3.4:8080", ...}]' },
+    { url: 'GET /count/', desc: '获取代理池统计', params: '无', example: '/count/', resp: '{"http_type": {"http": 100, "https": 50}, "count": 150}' },
+    { url: 'GET /get_status/', desc: '获取代理池详细状态', params: '无', example: '/get_status/', resp: '{"total": 150, "healthy_count": 120, ...}' },
+    { url: 'GET /proxy_use_count/?limit=10', desc: '代理使用次数排行', params: 'limit: 数量（默认10，最大100）', example: '/proxy_use_count/?limit=5', resp: '{"ranking": [...], "limit": 5}' },
+    { url: 'GET /export/?format=json&available=1&https=0', desc: '导出代理列表', params: 'format: json|txt, available: 1|0, https: 1|0', example: '/export/?format=txt&available=1', resp: '文件下载（json或txt）' },
+    { url: 'GET /refresh_pool/', desc: '手动触发代理池刷新', params: '无', example: '/refresh_pool/', resp: '{"code": 1, "msg": "refresh triggered"}' },
+    { url: 'GET /ai_search/', desc: '手动触发AI代理搜索', params: '无', example: '/ai_search/', resp: '{"code": 1, "msg": "AI search complete", ...}' },
+    { url: 'GET /api/sources/', desc: '获取所有代理源配置', params: '无', example: '/api/sources/', resp: '{"sources": [...], "total": 70}' },
+    { url: 'GET /api/dashboard/status/', desc: '仪表盘统计数据', params: '无', example: '/api/dashboard/status/', resp: '{"total": 150, "speed": {...}, ...}' },
+    { url: 'GET /api/dashboard/activity/', desc: '每日动态和AI搜索记录', params: '无', example: '/api/dashboard/activity/', resp: '{"ai_search_log": [...], ...}' },
+  ];
+  document.getElementById('apiDocs').innerHTML = apis.map(a => `
+    <div class="api-item">
+      <h3>${a.desc}</h3>
+      <div class="url">${a.url}</div>
+      <div class="desc">参数: ${a.params}</div>
+      <pre>curl http://HOST:5010${a.example}\n\n// Response:\n${a.resp}</pre>
+    </div>`).join('');
+}
+
+// --- Activity ---
+async function loadActivity() {
+  const d = await fetchJSON('/api/dashboard/activity/');
+
+  // AI search log
+  const logs = d.ai_search_log || [];
+  document.getElementById('aiLogTable').innerHTML = logs.length
+    ? logs.map(l => `<tr><td>${l.time || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
+    : '<tr><td colspan="4" style="text-align:center;color:#666">暂无 AI 搜索记录</td></tr>';
+
+  // Daily chart
+  const daily = (d.daily_counts || []).reverse();
+  destroyChart('chartDaily');
+  charts.chartDaily = new Chart(document.getElementById('chartDaily'), {
+    type: 'line',
+    data: { labels: daily.map(x => x.date), datasets: [{ label: '新增代理', data: daily.map(x => x.count),
+      borderColor: '#7c8aff', backgroundColor: 'rgba(124,138,255,0.1)', fill: true, tension: 0.3 }] },
+    options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } },
+      scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888' } } } }
+  });
+}
+
+// --- Main ---
+async function refreshAll() {
+  try {
+    await Promise.all([loadSources(), loadStats(), loadActivity()]);
+    document.getElementById('lastUpdate').textContent = '更新于 ' + new Date().toLocaleTimeString();
+  } catch(e) {
+    console.error('refresh error:', e);
+  }
+}
+
+loadAPIDocs();
+refreshAll();
+setInterval(refreshAll, 60000);
+</script>
+</body>
+</html>

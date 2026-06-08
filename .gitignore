@@ -71,3 +71,6 @@ dump.rdb
 
 # Docker
 docker-compose.override.yml
+
+# AI-discovered proxy sources (auto-generated)
+conf/sources/AI-*.ini

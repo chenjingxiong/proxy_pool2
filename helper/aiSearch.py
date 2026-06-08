@@ -13,7 +13,6 @@ from handler.logHandler import LogHandler
 class AISearch(object):
     """AI-powered proxy source discovery and proxy extraction"""
 
-    # 整体搜索超时（秒）
     SEARCH_HARD_LIMIT = 120
 
     def __init__(self):
@@ -24,6 +23,7 @@ class AISearch(object):
         self.model = self.conf.aiModel
         self.timeout = self.conf.aiApiTimeout
         self.max_sources = min(self.conf.aiMaxSources, 3)
+        self._successful_sources = []  # 跟踪成功的源URL
 
     @property
     def enabled(self):
@@ -76,8 +76,49 @@ class AISearch(object):
         ip_pattern = re.compile(r"(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}")
         return list(set(ip_pattern.findall(text)))
 
+    def _log_search_result(self, total_found, direct_count, source_count):
+        """记录AI搜索结果到Redis"""
+        try:
+            from db.dbClient import DbClient
+            db = DbClient(self.conf.dbConn)
+            # 使用原生Redis连接写日志
+            import redis
+            conn = redis.Redis.from_url(self.conf.dbConn, decode_responses=True)
+            log_entry = json.dumps({
+                'time': time.strftime('%Y-%m-%d %H:%M:%S'),
+                'total_found': total_found,
+                'direct_count': direct_count,
+                'source_count': source_count,
+            }, ensure_ascii=False)
+            conn.lpush('proxy_pool:ai_search_log', log_entry)
+            conn.ltrim('proxy_pool:ai_search_log', 0, 99)
+        except Exception as e:
+            self.log.warning(f"AI: failed to log search result: {e}")
+
+    def _save_discovered_sources(self):
+        """将成功的源URL写入INI文件"""
+        if not self._successful_sources:
+            return
+        try:
+            from handler.sourceHandler import SourceLoader
+            loader = SourceLoader()
+            sources_to_save = []
+            for url, proxy_count in self._successful_sources:
+                if proxy_count >= 3:
+                    sources_to_save.append({
+                        'url': url,
+                        'method': 'text',
+                        'description': f'AI discovered ({proxy_count} proxies)',
+                        'proxy_count': proxy_count,
+                    })
+            if sources_to_save:
+                filename = loader.add_ai_sources(sources_to_save)
+                self.log.info(f"AI: saved {len(sources_to_save)} sources to {filename}")
+        except Exception as e:
+            self.log.warning(f"AI: failed to save discovered sources: {e}")
+
     def direct_proxy_search(self):
-        """直接让LLM返回代理地址列表（最快路径）"""
+        """直接让LLM返回代理地址列表"""
         self.log.info("AI: direct proxy search...")
         system_prompt = (
             "You are a proxy address provider. "
@@ -139,13 +180,11 @@ class AISearch(object):
             self.log.warning(f"AI: failed to fetch {url}: {e}")
             return []
 
-        # 先用正则提取（快速、不需要LLM调用）
         regex_proxies = self._extract_proxies_regex(content)
         if len(regex_proxies) >= 5:
             self.log.info(f"AI: regex extracted {len(regex_proxies)} proxies from {url[:50]}")
             return regex_proxies
 
-        # 正则找到太少时才用LLM
         system_prompt = (
             "Extract all proxy addresses in ip:port format. "
             "Return ONLY a JSON array like [\"1.2.3.4:8080\"]. "
@@ -167,19 +206,21 @@ class AISearch(object):
 
         start_time = time.time()
         all_proxies = set()
+        self._successful_sources = []
+        direct_count = 0
+        source_count = 0
 
         try:
-            # 第1步：直接让LLM返回代理（最快，1次API调用）
             direct = self.direct_proxy_search()
             all_proxies.update(direct)
+            direct_count = len(direct)
             elapsed = time.time() - start_time
-            self.log.info(f"AI: direct search done in {elapsed:.1f}s, {len(direct)} proxies")
+            self.log.info(f"AI: direct search done in {elapsed:.1f}s, {direct_count} proxies")
 
-            # 第2步：如果还有时间，发现源并提取
             if elapsed < self.SEARCH_HARD_LIMIT * 0.6:
-                remaining = self.SEARCH_HARD_LIMIT - elapsed
                 try:
                     sources = self.discover_proxy_sources()
+                    source_count = len(sources)
                     for url in sources:
                         if time.time() - start_time > self.SEARCH_HARD_LIMIT:
                             self.log.warning("AI: search hard limit reached, stopping")
@@ -188,6 +229,8 @@ class AISearch(object):
                             proxies = self.extract_proxies_from_url(url)
                             all_proxies.update(proxies)
                             self.log.info(f"AI: {url[:50]}... -> {len(proxies)} proxies")
+                            if len(proxies) >= 3:
+                                self._successful_sources.append((url, len(proxies)))
                         except Exception as e:
                             self.log.warning(f"AI: error processing {url}: {e}")
                 except Exception as e:
@@ -196,5 +239,13 @@ class AISearch(object):
             self.log.error(f"AI: search_proxies failed: {e}")
 
         elapsed = time.time() - start_time
-        self.log.info(f"AI: search complete in {elapsed:.1f}s - {len(all_proxies)} unique proxies")
+        total = len(all_proxies)
+        self.log.info(f"AI: search complete in {elapsed:.1f}s - {total} unique proxies")
+
+        # 保存成功的源到INI文件
+        self._save_discovered_sources()
+
+        # 记录搜索结果日志到Redis
+        self._log_search_result(total, direct_count, source_count)
+
         return list(all_proxies)

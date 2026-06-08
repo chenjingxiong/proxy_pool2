@@ -1,17 +1,12 @@
 # -*- coding: utf-8 -*-
 """
--------------------------------------------------
-   File Name：     fetchScheduler
-   Description :
-   Author :        JHao
-   date：          2019/8/6
--------------------------------------------------
-   Change Activity:
-                   2021/11/18: 多线程采集
--------------------------------------------------
+   fetch - 多线程代理采集
 """
 __author__ = 'JHao'
 
+import re
+import json
+import requests
 from threading import Thread
 from helper.proxy import Proxy
 from helper.check import DoValidator
@@ -19,18 +14,60 @@ from handler.logHandler import LogHandler
 from handler.proxyHandler import ProxyHandler
 from fetcher.proxyFetcher import ProxyFetcher
 from handler.configHandler import ConfigHandler
+from handler.sourceHandler import SourceLoader
+
+
+def generic_url_fetcher(source_config):
+    """通用URL代理抓取器（用于AI发现的源）"""
+    url = source_config.url
+    method = source_config.method or 'text'
+    try:
+        resp = requests.get(url, timeout=15, verify=False,
+                            headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+
+        if method == 'json_api':
+            data = resp.json()
+            # 支持简单的json_path: data[*].ip / data[*].port
+            items = data if isinstance(data, list) else data.get('data', data.get('proxies', []))
+            for item in items:
+                if isinstance(item, dict):
+                    ip = item.get('ip', '')
+                    port = item.get('port', '')
+                    if ip and port:
+                        yield f"{ip}:{port}"
+                elif isinstance(item, str) and ':' in item:
+                    yield item
+        else:
+            # text / html_regex: 按行分割+正则匹配
+            ip_pattern = re.compile(r'(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}')
+            for line in resp.text.strip().split('\n'):
+                line = line.strip()
+                if not line or line.startswith('#'):
+                    continue
+                matches = ip_pattern.findall(line)
+                if matches:
+                    for m in matches:
+                        yield m
+                elif ':' in line:
+                    yield line
+    except Exception:
+        pass
 
 
 class _ThreadFetcher(Thread):
 
-    def __init__(self, fetch_source, proxy_dict):
+    def __init__(self, fetch_source, proxy_dict, source_config=None):
         Thread.__init__(self)
         self.fetch_source = fetch_source
         self.proxy_dict = proxy_dict
-        self.fetcher = getattr(ProxyFetcher, fetch_source, None)
+        self.source_config = source_config
         self.log = LogHandler("fetcher")
-        self.conf = ConfigHandler()
-        self.proxy_handler = ProxyHandler()
+
+        if source_config and source_config.type != 'builtin':
+            self.fetcher = lambda: generic_url_fetcher(source_config)
+        else:
+            self.fetcher = getattr(ProxyFetcher, fetch_source, None)
 
     def run(self):
         self.log.info("ProxyFetch - {func}: start".format(func=self.fetch_source))
@@ -54,6 +91,7 @@ class Fetcher(object):
     def __init__(self):
         self.log = LogHandler(self.name)
         self.conf = ConfigHandler()
+        self.loader = SourceLoader()
 
     def run(self):
         """
@@ -65,7 +103,13 @@ class Fetcher(object):
         self.log.info("ProxyFetch : start")
 
         for fetch_source in self.conf.fetchers:
-            self.log.info("ProxyFetch - {func}: start".format(func=fetch_source))
+            source_config = self.loader.get_source(fetch_source)
+
+            if source_config and source_config.type != 'builtin':
+                thread_list.append(_ThreadFetcher(fetch_source, proxy_dict, source_config))
+                continue
+
+            # builtin源：使用ProxyFetcher的静态方法
             fetcher = getattr(ProxyFetcher, fetch_source, None)
             if not fetcher:
                 self.log.error("ProxyFetch - {func}: class method not exists!".format(func=fetch_source))

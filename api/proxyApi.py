@@ -20,7 +20,7 @@ import platform
 import time as _time
 import json as _json
 from werkzeug.wrappers import Response
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, render_template
 
 from util.six import iteritems
 from helper.proxy import Proxy
@@ -28,7 +28,7 @@ from handler.proxyHandler import ProxyHandler
 from handler.configHandler import ConfigHandler
 from handler.refreshHandler import RefreshHandler
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder='templates')
 conf = ConfigHandler()
 proxy_handler = ProxyHandler()
 
@@ -59,7 +59,7 @@ api_list = [
 
 @app.route('/')
 def index():
-    return {'url': api_list}
+    return render_template('dashboard.html')
 
 
 @app.route('/get/')
@@ -257,6 +257,150 @@ def aiSearch():
         }
     except Exception as e:
         return {"code": 0, "msg": str(e)}
+
+
+# ===================== Dashboard API =====================
+
+@app.route('/api/sources/')
+def apiSources():
+    """返回所有代理源配置及统计"""
+    from handler.sourceHandler import SourceLoader
+    loader = SourceLoader()
+    all_sources = loader.get_all_sources()
+
+    # 统计每个源贡献的代理数量
+    proxies = proxy_handler.getAll()
+    source_contrib = {}
+    for proxy in proxies:
+        for src in proxy.source.split('/'):
+            src = src.strip()
+            if src:
+                source_contrib[src] = source_contrib.get(src, 0) + 1
+
+    result = []
+    for s in all_sources:
+        result.append({
+            "name": s.name,
+            "type": s.type,
+            "description": s.description,
+            "category": s.category,
+            "enabled": s.enabled,
+            "url": s.url or "",
+            "source_file": s.source_file,
+            "contributed": source_contrib.get(s.name, 0),
+        })
+
+    # 添加已贡献但不在INI中的源（如aiProxySearch）
+    ini_names = {s.name for s in all_sources}
+    for src, count in source_contrib.items():
+        if src not in ini_names:
+            result.append({
+                "name": src,
+                "type": "dynamic",
+                "description": src,
+                "category": "http",
+                "enabled": True,
+                "url": "",
+                "source_file": "",
+                "contributed": count,
+            })
+
+    return {"sources": result, "total": len(result)}
+
+
+@app.route('/api/dashboard/status/')
+def apiDashboardStatus():
+    """增强版代理池状态（含速度分布、健康率）"""
+    proxies = proxy_handler.getAll()
+    total = len(proxies)
+
+    http_count = 0
+    https_count = 0
+    healthy_count = 0
+    speeds = []
+    speed_buckets = {"<0.5s": 0, "0.5-1s": 0, "1-2s": 0, "2-5s": 0, ">5s": 0}
+    source_dict = {}
+    check_count_sum = 0
+    fail_count_sum = 0
+
+    for proxy in proxies:
+        if proxy.https:
+            https_count += 1
+        else:
+            http_count += 1
+        if proxy.last_status is True:
+            healthy_count += 1
+        if proxy.speed and proxy.speed > 0:
+            speeds.append(proxy.speed)
+            if proxy.speed < 0.5:
+                speed_buckets["<0.5s"] += 1
+            elif proxy.speed < 1:
+                speed_buckets["0.5-1s"] += 1
+            elif proxy.speed < 2:
+                speed_buckets["1-2s"] += 1
+            elif proxy.speed < 5:
+                speed_buckets["2-5s"] += 1
+            else:
+                speed_buckets[">5s"] += 1
+        for source in proxy.source.split('/'):
+            if source:
+                source_dict[source] = source_dict.get(source, 0) + 1
+        if proxy.check_count:
+            check_count_sum += proxy.check_count
+        if proxy.fail_count:
+            fail_count_sum += proxy.fail_count
+
+    top_sources = sorted(source_dict.items(), key=lambda x: x[1], reverse=True)[:10]
+
+    return {
+        "total": total,
+        "http_count": http_count,
+        "https_count": https_count,
+        "healthy_count": healthy_count,
+        "unhealthy_count": total - healthy_count,
+        "health_rate": round(healthy_count / total * 100, 1) if total else 0,
+        "speed": {
+            "avg": round(sum(speeds) / len(speeds), 3) if speeds else 0,
+            "min": round(min(speeds), 3) if speeds else 0,
+            "max": round(max(speeds), 3) if speeds else 0,
+            "distribution": speed_buckets,
+        },
+        "top_sources": [{"name": n, "count": c} for n, c in top_sources],
+        "total_check_count": check_count_sum,
+        "total_fail_count": fail_count_sum,
+        "timestamp": _time.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+
+@app.route('/api/dashboard/activity/')
+def apiDashboardActivity():
+    """每日动态、AI搜索历史、调度信息"""
+    import redis as _redis
+    activity = {
+        "ai_search_log": [],
+        "daily_counts": [],
+    }
+
+    try:
+        conn = _redis.Redis.from_url(conf.dbConn, decode_responses=True)
+
+        # AI搜索历史
+        logs = conn.lrange('proxy_pool:ai_search_log', 0, 29)
+        activity["ai_search_log"] = [_json.loads(l) for l in logs if l]
+
+        # 每日代理数（基于key pattern proxy_pool:daily:YYYY-MM-DD）
+        daily = {}
+        for key in conn.scan_iter('proxy_pool:daily:*'):
+            date_str = key.split(':')[-1]
+            daily[date_str] = int(conn.get(key) or 0)
+        activity["daily_counts"] = [
+            {"date": d, "count": c} for d, c in sorted(daily.items(), reverse=True)[:30]
+        ]
+    except Exception:
+        pass
+
+    activity["timestamp"] = _time.strftime("%Y-%m-%d %H:%M:%S")
+    return activity
 
 
 def runFlask():

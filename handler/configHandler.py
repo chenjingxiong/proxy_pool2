@@ -42,6 +42,11 @@ class ConfigHandler(withMetaclass(Singleton)):
 
     @property
     def fetchers(self):
+        from handler.sourceHandler import SourceLoader
+        loader = SourceLoader()
+        names = loader.get_fetcher_names()
+        if names:
+            return names
         reload_six(setting)
         return setting.PROXY_FETCHER
 
