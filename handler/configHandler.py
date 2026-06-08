@@ -81,3 +81,34 @@ class ConfigHandler(withMetaclass(Singleton)):
     def timezone(self):
         return os.getenv("TIMEZONE", setting.TIMEZONE)
 
+    @LazyProperty
+    def aiApiKey(self):
+        return os.getenv("AI_API_KEY", setting.AI_API_KEY)
+
+    @LazyProperty
+    def aiApiBaseUrl(self):
+        return os.getenv("AI_API_BASE_URL", setting.AI_API_BASE_URL)
+
+    @LazyProperty
+    def aiModel(self):
+        return os.getenv("AI_MODEL", setting.AI_MODEL)
+
+    @LazyProperty
+    def aiSearchEnabled(self):
+        env_val = os.getenv("AI_SEARCH_ENABLED")
+        if env_val is not None:
+            return env_val.lower() in ("1", "true", "yes")
+        return bool(self.aiApiKey)
+
+    @LazyProperty
+    def aiSearchHour(self):
+        return int(os.getenv("AI_SEARCH_HOUR", setting.AI_SEARCH_HOUR))
+
+    @LazyProperty
+    def aiMaxSources(self):
+        return int(os.getenv("AI_MAX_SOURCES", setting.AI_MAX_SOURCES))
+
+    @LazyProperty
+    def aiApiTimeout(self):
+        return int(os.getenv("AI_API_TIMEOUT", setting.AI_API_TIMEOUT))
+

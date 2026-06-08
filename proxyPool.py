@@ -16,6 +16,12 @@ import click
 from helper.launcher import startServer, startScheduler
 from setting import BANNER, VERSION
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 CONTEXT_SETTINGS = dict(help_option_names=['-h', '--help'])
 
 

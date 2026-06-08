@@ -144,3 +144,25 @@ PROXY_REGION = True
 # Otherwise it will detect the timezone from the system automatically.
 
 TIMEZONE = "Asia/Shanghai"
+
+# ############# AI proxy search config #################
+# AI API密钥（必须通过环境变量设置，不要硬编码）
+AI_API_KEY = ""
+
+# AI API基础URL（OpenAI兼容接口）
+AI_API_BASE_URL = "https://api.openai.com/v1"
+
+# AI模型名称
+AI_MODEL = "gpt-3.5-turbo"
+
+# 是否启用AI代理搜索（设置了AI_API_KEY时自动启用）
+AI_SEARCH_ENABLED = False
+
+# 每日AI搜索执行时间（0-23点，默认凌晨3点）
+AI_SEARCH_HOUR = 3
+
+# AI每次搜索最多探索的代理源数量
+AI_MAX_SOURCES = 10
+
+# AI API请求超时时间（秒）
+AI_API_TIMEOUT = 60

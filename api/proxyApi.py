@@ -231,6 +231,34 @@ def refreshPool():
         return {"code": 0, "msg": str(e)}
 
 
+@app.route('/ai_search/')
+def aiSearch():
+    """ 手动触发AI代理搜索 """
+    _conf = ConfigHandler()
+    if not _conf.aiSearchEnabled:
+        return {"code": 0, "msg": "AI search is not enabled. Set AI_API_KEY env var."}
+    try:
+        from helper.aiSearch import AISearch
+        from util.six import Queue
+        from helper.check import Checker
+        ai = AISearch()
+        proxies = ai.search_proxies()
+        proxy_queue = Queue()
+        for proxy_str in proxies:
+            proxy_queue.put(Proxy(proxy_str, source="aiProxySearch"))
+        queue_size = proxy_queue.qsize()
+        if queue_size > 0:
+            Checker("raw", proxy_queue)
+        return {
+            "code": 1,
+            "msg": "AI search complete",
+            "proxies_found": len(proxies),
+            "proxies_validated": queue_size,
+        }
+    except Exception as e:
+        return {"code": 0, "msg": str(e)}
+
+
 def runFlask():
     if platform.system() == "Windows":
         app.run(host=conf.serverHost, port=conf.serverPort)

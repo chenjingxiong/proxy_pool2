@@ -1018,6 +1018,15 @@ class ProxyFetcher(object):
         except Exception as e:
             pass
 
+    @staticmethod
+    def aiProxySearch():
+        """ AI智能代理搜索 """
+        from helper.aiSearch import AISearch
+        ai = AISearch()
+        for proxy in ai.search_proxies():
+            yield proxy
+
+
 if __name__ == '__main__':
     p = ProxyFetcher()
     for _ in p.freeProxy03():
