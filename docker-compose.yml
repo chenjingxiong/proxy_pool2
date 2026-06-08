@@ -37,5 +37,18 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  scheduler:
+    build: .
+    container_name: proxy_pool_scheduler
+    env_file:
+      - .env
+    environment:
+      - DB_CONN=redis://:pwd@redis:6380/0
+    command: ["python", "proxyPool.py", "schedule"]
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   redis_data:
