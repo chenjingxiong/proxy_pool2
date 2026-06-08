@@ -64,6 +64,7 @@ tr:hover td{background:#1e2133}
 <div class="tabs">
   <div class="tab active" data-tab="sources">代理源管理</div>
   <div class="tab" data-tab="stats">代理统计</div>
+  <div class="tab" data-tab="proxy_list">代理列表</div>
   <div class="tab" data-tab="api">API 文档</div>
   <div class="tab" data-tab="activity">每日动态</div>
   <div class="tab" data-tab="ai_config">AI 配置</div>
@@ -87,6 +88,67 @@ tr:hover td{background:#1e2133}
     <div class="chart-box"><h3>健康率</h3><canvas id="chartHealth"></canvas></div>
     <div class="chart-box"><h3>速度分布</h3><canvas id="chartSpeed"></canvas></div>
     <div class="chart-box"><h3>Top 10 代理源贡献</h3><canvas id="chartTopSources"></canvas></div>
+  </div>
+</div>
+
+<!-- Tab: Proxy List -->
+<div class="panel" id="panel-proxy_list">
+  <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
+    <div class="form-group" style="margin:0">
+      <label>协议过滤</label>
+      <select id="proxyFilterHttps" onchange="loadProxyList()">
+        <option value="">全部</option>
+        <option value="1">仅 HTTPS</option>
+        <option value="0">仅 HTTP</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>排序方式</label>
+      <select id="proxySortBy" onchange="loadProxyList()">
+        <option value="speed">速度（快到慢）</option>
+        <option value="check_count">验证次数</option>
+        <option value="use_count">使用次数</option>
+        <option value="last_time">最近检查</option>
+      </select>
+    </div>
+    <div class="form-group" style="margin:0">
+      <label>每页数量</label>
+      <select id="proxyPageSize" onchange="loadProxyList()">
+        <option value="20">20</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+      </select>
+    </div>
+    <div style="flex:1"></div>
+    <div style="font-size:13px;color:#888" id="proxyListInfo"></div>
+  </div>
+  <div class="table-wrap" style="max-height:500px">
+    <table>
+      <thead><tr>
+        <th>代理地址</th><th>类型</th><th>速度(s)</th><th>验证次数</th>
+        <th>使用次数</th><th>状态</th><th>最近检查</th><th>来源</th><th>操作</th>
+      </tr></thead>
+      <tbody id="proxyListTable"></tbody>
+    </table>
+  </div>
+  <div style="display:flex;justify-content:center;gap:8px;margin-top:16px" id="proxyListPager"></div>
+
+  <div class="chart-box" style="margin-top:24px">
+    <h3>代理测试</h3>
+    <div style="margin-top:8px">
+      <div class="form-row">
+        <div class="form-group"><label>目标 URL</label>
+          <input id="testTargetUrl" value="https://ipaddress.my/zh_cn/" placeholder="https://example.com">
+        </div>
+        <div class="form-group"><label>代理地址（留空随机选择）</label>
+          <input id="testProxyAddr" placeholder="1.2.3.4:8080">
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end">
+          <button class="btn btn-primary" id="btnProxyTest" onclick="runProxyTest()">测试代理</button>
+        </div>
+      </div>
+      <div id="proxyTestResult" style="margin-top:12px"></div>
+    </div>
   </div>
 </div>
 
@@ -275,6 +337,8 @@ function loadAPIDocs() {
     { url: 'GET /api/sources/', desc: '获取所有代理源配置', params: '无', example: '/api/sources/', resp: '{"sources": [...], "total": 70}' },
     { url: 'GET /api/dashboard/status/', desc: '仪表盘统计数据', params: '无', example: '/api/dashboard/status/', resp: '{"total": 150, "speed": {...}, ...}' },
     { url: 'GET /api/dashboard/activity/', desc: '每日动态和AI搜索记录', params: '无', example: '/api/dashboard/activity/', resp: '{"ai_search_log": [...], ...}' },
+    { url: 'GET /api/proxies/list/?page=1&size=50&sort=speed&https=1', desc: '代理列表（分页+排序+过滤）', params: 'page: 页码, size: 每页数, sort: speed|check_count|use_count|last_time, https: 1|0|空', example: '/api/proxies/list/?page=1&size=20&sort=speed', resp: '{"total": 150, "page": 1, "proxies": [...]}' },
+    { url: 'POST /api/proxy/test/', desc: '通过代理测试目标URL', params: 'url: 目标URL, proxy: 代理地址(可选)', example: '/api/proxy/test/', resp: '{"code": 1, "proxy_used": "...", "status_code": 200, "elapsed": 1.5}' },
   ];
   document.getElementById('apiDocs').innerHTML = apis.map(a => `
     <div class="api-item">
@@ -283,6 +347,102 @@ function loadAPIDocs() {
       <div class="desc">参数: ${a.params}</div>
       <pre>curl http://HOST:5010${a.example}\n\n// Response:\n${a.resp}</pre>
     </div>`).join('');
+}
+
+// --- Proxy List ---
+let proxyListPage = 1;
+
+async function loadProxyList(page) {
+  if (page) proxyListPage = page;
+  const https = document.getElementById('proxyFilterHttps').value;
+  const sort = document.getElementById('proxySortBy').value;
+  const size = document.getElementById('proxyPageSize').value;
+
+  const params = new URLSearchParams({page: proxyListPage, size: size, sort: sort});
+  if (https) params.set('https', https);
+
+  const data = await fetchJSON('/api/proxies/list/?' + params.toString());
+  const proxies = data.proxies || [];
+
+  document.getElementById('proxyListInfo').textContent =
+    `共 ${data.total} 个代理，第 ${data.page}/${Math.ceil(data.total / data.page_size)} 页`;
+
+  const tbody = document.getElementById('proxyListTable');
+  tbody.innerHTML = proxies.length
+    ? proxies.map(p => `<tr>
+        <td style="font-family:monospace">${p.proxy || '-'}</td>
+        <td><span class="badge ${p.https ? 'on' : 'off'}">${p.https ? 'HTTPS' : 'HTTP'}</span></td>
+        <td>${p.speed > 0 ? p.speed.toFixed(3) : '-'}</td>
+        <td>${p.check_count || 0}</td>
+        <td>${p.use_count || 0}</td>
+        <td><span class="badge ${p.last_status ? 'on' : 'off'}">${p.last_status ? '健康' : '异常'}</span></td>
+        <td style="font-size:11px;color:#888">${p.last_time || '-'}</td>
+        <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.source || ''}">${p.source || '-'}</td>
+        <td><button class="btn btn-primary" style="padding:2px 10px;font-size:11px" onclick="testProxyFromList('${p.proxy}')">测试</button></td>
+      </tr>`).join('')
+    : '<tr><td colspan="9" style="text-align:center;color:#666">暂无代理</td></tr>';
+
+  // Pagination
+  const totalPages = Math.ceil(data.total / data.page_size);
+  let pagerHtml = '';
+  if (totalPages > 1) {
+    const maxBtns = 7;
+    let startP = Math.max(1, proxyListPage - 3);
+    let endP = Math.min(totalPages, startP + maxBtns - 1);
+    if (endP - startP < maxBtns - 1) startP = Math.max(1, endP - maxBtns + 1);
+    if (proxyListPage > 1) pagerHtml += `<button class="btn btn-primary" style="padding:4px 12px;font-size:12px" onclick="loadProxyList(${proxyListPage - 1})">上一页</button>`;
+    for (let i = startP; i <= endP; i++) {
+      pagerHtml += `<button class="btn ${i === proxyListPage ? 'btn-danger' : 'btn-primary'}" style="padding:4px 12px;font-size:12px" onclick="loadProxyList(${i})">${i}</button>`;
+    }
+    if (proxyListPage < totalPages) pagerHtml += `<button class="btn btn-primary" style="padding:4px 12px;font-size:12px" onclick="loadProxyList(${proxyListPage + 1})">下一页</button>`;
+  }
+  document.getElementById('proxyListPager').innerHTML = pagerHtml;
+}
+
+function testProxyFromList(proxyAddr) {
+  document.getElementById('testProxyAddr').value = proxyAddr;
+  document.querySelector('[data-tab="proxy_list"]').click();
+  document.getElementById('proxyTestResult').innerHTML = '';
+}
+
+async function runProxyTest() {
+  const btn = document.getElementById('btnProxyTest');
+  const resultDiv = document.getElementById('proxyTestResult');
+  const targetUrl = document.getElementById('testTargetUrl').value.trim();
+  const proxyAddr = document.getElementById('testProxyAddr').value.trim();
+
+  btn.disabled = true;
+  btn.textContent = '测试中...';
+  resultDiv.innerHTML = '<div class="loading">正在通过代理请求目标 URL，请稍候...</div>';
+
+  try {
+    const r = await fetch('/api/proxy/test/', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({url: targetUrl, proxy: proxyAddr})
+    });
+    const res = await r.json();
+    if (res.code === 1) {
+      resultDiv.innerHTML = `
+        <div class="cards" style="margin-bottom:12px">
+          <div class="card"><div class="label">使用代理</div><div class="value" style="font-size:16px">${res.proxy_used}</div></div>
+          <div class="card"><div class="label">状态码</div><div class="value" style="font-size:16px">${res.status_code}</div></div>
+          <div class="card"><div class="label">耗时</div><div class="value" style="font-size:16px">${res.elapsed}s</div></div>
+          <div class="card"><div class="label">检测到IP</div><div class="value" style="font-size:14px">${(res.detected_ips || []).join(', ') || '-'}</div></div>
+        </div>
+        <div style="font-size:12px;color:#888;margin-bottom:4px">目标: ${res.target_url}</div>
+        <details><summary style="cursor:pointer;color:#7c8aff;font-size:13px">查看返回内容（前500字符）</summary>
+          <pre style="margin-top:8px;max-height:300px;overflow:auto">${(res.content || '').substring(0, 500).replace(/</g, '&lt;')}</pre>
+        </details>`;
+    } else {
+      resultDiv.innerHTML = `<div style="color:#d55b5b">${res.msg || '测试失败'}</div>`;
+    }
+  } catch(e) {
+    resultDiv.innerHTML = `<div style="color:#d55b5b">请求失败: ${e}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '测试代理';
+  }
 }
 
 // --- Activity ---
@@ -387,7 +547,7 @@ async function runAISearch() {
 // --- Main ---
 async function refreshAll() {
   try {
-    await Promise.all([loadSources(), loadStats(), loadActivity(), loadAIConfig()]);
+    await Promise.all([loadSources(), loadStats(), loadProxyList(), loadActivity(), loadAIConfig()]);
     document.getElementById('lastUpdate').textContent = '更新于 ' + new Date().toLocaleTimeString();
   } catch(e) {
     console.error('refresh error:', e);

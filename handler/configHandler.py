@@ -35,8 +35,37 @@ def _load_ai_config():
     config = configparser.ConfigParser()
     if os.path.isfile(AI_CONFIG_FILE):
         config.read(AI_CONFIG_FILE, encoding='utf-8')
-    if config.has_section('ai'):
-        return dict(config.items('ai'))
+        if config.has_section('ai'):
+            return dict(config.items('ai'))
+        return {}
+    # 首次启动：INI 不存在时从环境变量 seed 一份
+    env_seed = {
+        'api_key': os.getenv('AI_API_KEY', ''),
+        'api_base_url': os.getenv('AI_API_BASE_URL', ''),
+        'model': os.getenv('AI_MODEL', ''),
+        'search_hour': os.getenv('AI_SEARCH_HOUR', ''),
+        'max_sources': os.getenv('AI_MAX_SOURCES', ''),
+        'api_timeout': os.getenv('AI_API_TIMEOUT', ''),
+    }
+    env_se_enabled = os.getenv('AI_SEARCH_ENABLED')
+    if env_se_enabled is not None:
+        env_seed['search_enabled'] = 'true' if env_se_enabled.lower() in ('1', 'true', 'yes') else 'false'
+    elif os.getenv('AI_API_KEY'):
+        env_seed['search_enabled'] = 'true'
+    else:
+        env_seed['search_enabled'] = 'false'
+
+    # 过滤空值，保留有实际值的
+    has_any = any(v for v in env_seed.values())
+    if has_any:
+        config.add_section('ai')
+        for k, v in env_seed.items():
+            if v:
+                config.set('ai', k, v)
+        os.makedirs(os.path.dirname(AI_CONFIG_FILE), exist_ok=True)
+        with open(AI_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            config.write(f)
+        return {k: v for k, v in env_seed.items() if v}
     return {}
 
 

@@ -469,6 +469,93 @@ def apiAiSearch():
         return {"code": 0, "msg": str(e)}
 
 
+# ===================== Proxy List & Test API =====================
+
+@app.route('/api/proxies/list/')
+def apiProxiesList():
+    """代理列表，支持分页和排序"""
+    proxies = proxy_handler.getAll()
+    page = request.args.get("page", 1, type=int)
+    page_size = request.args.get("size", 50, type=int)
+    sort_by = request.args.get("sort", "speed")
+    https_filter = request.args.get("https", "")
+
+    # 过滤
+    if https_filter == "1":
+        proxies = [p for p in proxies if p.https]
+    elif https_filter == "0":
+        proxies = [p for p in proxies if not p.https]
+
+    # 排序
+    if sort_by == "speed":
+        proxies.sort(key=lambda p: p.speed if p.speed and p.speed > 0 else 999, reverse=False)
+    elif sort_by == "check_count":
+        proxies.sort(key=lambda p: p.check_count or 0, reverse=True)
+    elif sort_by == "use_count":
+        proxies.sort(key=lambda p: p.use_count or 0, reverse=True)
+    else:
+        proxies.sort(key=lambda p: p.last_time or "", reverse=True)
+
+    total = len(proxies)
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_proxies = proxies[start:end]
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "proxies": [p.to_dict for p in page_proxies],
+    }
+
+
+@app.route('/api/proxy/test/', methods=['POST'])
+def apiProxyTest():
+    """通过指定代理获取目标URL内容"""
+    data = request.get_json(force=True) if request.is_json else {}
+    target_url = data.get("url", "https://ipaddress.my/zh_cn/")
+    proxy_str = data.get("proxy", "")
+
+    # 如果没有指定代理，随机选一个
+    if not proxy_str:
+        proxy_obj = proxy_handler.get()
+        if not proxy_obj:
+            return {"code": 0, "msg": "代理池为空，无可用代理"}
+        proxy_str = proxy_obj.proxy
+        proxy_handler.incrementUseCount(proxy_obj)
+
+    try:
+        import requests as _req
+        proxies = {
+            "http": f"http://{proxy_str}",
+            "https": f"http://{proxy_str}",
+        }
+        start = _time.time()
+        resp = _req.get(target_url, proxies=proxies, timeout=15,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+                        verify=False, allow_redirects=True)
+        elapsed = round(_time.time() - start, 2)
+
+        # 提取页面中的IP信息
+        import re as _re
+        ip_matches = _re.findall(r'(?:\d{1,3}\.){3}\d{1,3}', resp.text)
+        detected_ips = list(set(ip_matches))[:5]
+
+        return {
+            "code": 1,
+            "proxy_used": proxy_str,
+            "target_url": target_url,
+            "status_code": resp.status_code,
+            "elapsed": elapsed,
+            "content": resp.text[:50000],
+            "detected_ips": detected_ips,
+        }
+    except _req.Timeout:
+        return {"code": 0, "msg": f"代理 {proxy_str} 连接超时"}
+    except Exception as e:
+        return {"code": 0, "msg": f"请求失败: {str(e)}"}
+
+
 def runFlask():
     if platform.system() == "Windows":
         app.run(host=conf.serverHost, port=conf.serverPort)
