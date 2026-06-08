@@ -25,7 +25,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 CMD ["gunicorn", \
      "--bind", "0.0.0.0:5010", \
      "--workers", "4", \
-     "--timeout", "120", \
+     "--timeout", "300", \
      "--access-logfile", "-", \
      "--access-logformat", "%(h)s %(l)s %(t)s \"%(r)s\" %(s)s \"%(a)s\"", \
      "api.proxyApi:app"]

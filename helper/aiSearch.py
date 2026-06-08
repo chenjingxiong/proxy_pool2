@@ -48,10 +48,13 @@ class AISearch(object):
         }
         try:
             resp = requests.post(url, headers=headers, json=payload,
-                                 timeout=self.timeout)
+                                 timeout=min(self.timeout, 90))
             resp.raise_for_status()
             data = resp.json()
             return data["choices"][0]["message"]["content"]
+        except requests.Timeout:
+            self.log.error("LLM API call timed out")
+            return ""
         except Exception as e:
             self.log.error(f"LLM API call failed: {e}")
             return ""
@@ -102,7 +105,7 @@ class AISearch(object):
         """抓取网页并用 AI 提取代理地址"""
         self.log.info(f"AI: extracting proxies from {url}")
         try:
-            resp = requests.get(url, timeout=self.timeout, verify=False,
+            resp = requests.get(url, timeout=15, verify=False,
                                 headers={"User-Agent": "Mozilla/5.0"})
             content = resp.text[:8000]
         except Exception as e:
