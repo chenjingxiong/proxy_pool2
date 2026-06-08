@@ -19,8 +19,7 @@ __author__ = 'JHao'
 import platform
 import time as _time
 import json as _json
-from werkzeug.wrappers import Response
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, Response
 
 from util.six import iteritems
 from helper.proxy import Proxy
