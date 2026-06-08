@@ -27,7 +27,7 @@ services:
     environment:
       - DB_CONN=redis://:pwd@redis:6380/0
     volumes:
-      - ./conf/sources:/app/conf/sources
+      - ./conf:/app/conf
     depends_on:
       redis:
         condition: service_healthy
@@ -47,7 +47,7 @@ services:
     environment:
       - DB_CONN=redis://:pwd@redis:6380/0
     volumes:
-      - ./conf/sources:/app/conf/sources
+      - ./conf:/app/conf
     command: ["python", "proxyPool.py", "schedule"]
     depends_on:
       redis:

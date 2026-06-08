@@ -30,6 +30,17 @@ table{width:100%;border-collapse:collapse;background:#1a1d29;border-radius:8px;o
 th{background:#22253a;color:#888;font-size:12px;padding:10px 12px;text-align:left;position:sticky;top:0}
 td{padding:8px 12px;font-size:13px;border-top:1px solid #2a2d3a}
 tr:hover td{background:#1e2133}
+.form-group{margin-bottom:14px}
+.form-group label{display:block;font-size:12px;color:#888;margin-bottom:4px}
+.form-group input,.form-group select{padding:8px 12px;background:#0f1117;border:1px solid #2a2d3a;border-radius:4px;color:#e0e0e0;font-size:13px;width:100%;max-width:400px}
+.form-group input:focus{border-color:#7c8aff;outline:none}
+.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
+.btn{padding:8px 20px;border:none;border-radius:4px;font-size:13px;cursor:pointer;transition:all .2s}
+.btn-primary{background:#7c8aff;color:#fff}
+.btn-primary:hover{background:#6a78e0}
+.btn-success{background:#2d9147;color:#fff}
+.btn-success:hover{background:#257a3b}
+.btn-danger{background:#c0392b;color:#fff;width:100%}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
 .badge.builtin{background:#1a3a5c;color:#5b9bd5}
 .badge.url_text{background:#1a3c2a;color:#5bd58a}
@@ -55,6 +66,7 @@ tr:hover td{background:#1e2133}
   <div class="tab" data-tab="stats">代理统计</div>
   <div class="tab" data-tab="api">API 文档</div>
   <div class="tab" data-tab="activity">每日动态</div>
+  <div class="tab" data-tab="ai_config">AI 配置</div>
 </div>
 <div class="content">
 
@@ -91,6 +103,52 @@ tr:hover td{background:#1e2133}
       <tbody id="aiLogTable"></tbody></table>
     </div>
     <div class="chart-box"><h3>每日新增代理</h3><canvas id="chartDaily"></canvas></div>
+  </div>
+</div>
+
+<!-- Tab: AI Config -->
+<div class="panel" id="panel-ai_config">
+  <div class="charts">
+    <div class="chart-box">
+      <h3>AI 搜索配置</h3>
+      <div style="margin-top:8px">
+        <div class="form-row">
+          <div class="form-group"><label>API Base URL</label><input id="cfgBaseUrl" placeholder="https://api.openai.com/v1"></div>
+          <div class="form-group"><label>API Key</label><input id="cfgApiKey" type="password" placeholder="sk-..."></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>模型</label><input id="cfgModel" placeholder="gpt-3.5-turbo"></div>
+          <div class="form-group"><label>搜索时间（小时 0-23）</label><input id="cfgSearchHour" type="number" min="0" max="23"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>最大探索源数</label><input id="cfgMaxSources" type="number" min="1" max="20"></div>
+          <div class="form-group"><label>API 超时（秒）</label><input id="cfgApiTimeout" type="number" min="10" max="300"></div>
+        </div>
+        <div class="form-row">
+          <div class="form-group"><label>启用定时搜索</label>
+            <select id="cfgSearchEnabled"><option value="true">启用</option><option value="false">禁用</option></select>
+          </div>
+          <div class="form-group" style="display:flex;align-items:flex-end">
+            <button class="btn btn-primary" onclick="saveAIConfig()">保存配置</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="chart-box">
+      <h3>手动 AI 搜索</h3>
+      <div style="margin-top:8px">
+        <button class="btn btn-success" id="btnAISearch" onclick="runAISearch()">立即执行 AI 搜索</button>
+        <div id="aiSearchResult" style="margin-top:16px"></div>
+      </div>
+      <h3 style="margin-top:20px">AI 发现的代理源</h3>
+      <table><thead><tr><th>名称</th><th>URL</th><th>描述</th><th>贡献</th></tr></thead>
+      <tbody id="aiSourcesTable"></tbody></table>
+    </div>
+  </div>
+  <div class="chart-box" style="margin-top:16px">
+    <h3>AI 搜索历史</h3>
+    <table><thead><tr><th>时间</th><th>发现代理数</th><th>直接搜索</th><th>源探索数</th></tr></thead>
+    <tbody id="aiConfigLogTable"></tbody></table>
   </div>
 </div>
 
@@ -249,10 +307,87 @@ async function loadActivity() {
   });
 }
 
+// --- AI Config ---
+async function loadAIConfig() {
+  try {
+    const cfg = await fetchJSON('/api/ai/config/');
+    document.getElementById('cfgBaseUrl').value = cfg.api_base_url || '';
+    document.getElementById('cfgApiKey').value = cfg.api_key_masked || '';
+    document.getElementById('cfgModel').value = cfg.model || '';
+    document.getElementById('cfgSearchHour').value = cfg.search_hour;
+    document.getElementById('cfgMaxSources').value = cfg.max_sources;
+    document.getElementById('cfgApiTimeout').value = cfg.api_timeout;
+    document.getElementById('cfgSearchEnabled').value = cfg.search_enabled ? 'true' : 'false';
+  } catch(e) { console.error('loadAIConfig error:', e); }
+
+  // AI discovered sources
+  try {
+    const srcData = await fetchJSON('/api/sources/');
+    const aiSrc = (srcData.sources || []).filter(s => s.type !== 'builtin');
+    document.getElementById('aiSourcesTable').innerHTML = aiSrc.length
+      ? aiSrc.map(s => `<tr><td style="font-family:monospace">${s.name}</td><td style="font-size:11px;word-break:break-all">${s.url || '-'}</td><td>${s.description || '-'}</td><td>${s.contributed}</td></tr>`).join('')
+      : '<tr><td colspan="4" style="text-align:center;color:#666">暂无 AI 发现的源</td></tr>';
+  } catch(e) {}
+
+  // AI search history in config tab
+  try {
+    const act = await fetchJSON('/api/dashboard/activity/');
+    const logs = act.ai_search_log || [];
+    document.getElementById('aiConfigLogTable').innerHTML = logs.length
+      ? logs.map(l => `<tr><td>${l.time || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
+      : '<tr><td colspan="4" style="text-align:center;color:#666">暂无记录</td></tr>';
+  } catch(e) {}
+}
+
+async function saveAIConfig() {
+  const data = {
+    api_base_url: document.getElementById('cfgBaseUrl').value,
+    api_key: document.getElementById('cfgApiKey').value,
+    model: document.getElementById('cfgModel').value,
+    search_hour: parseInt(document.getElementById('cfgSearchHour').value) || 3,
+    max_sources: parseInt(document.getElementById('cfgMaxSources').value) || 10,
+    api_timeout: parseInt(document.getElementById('cfgApiTimeout').value) || 60,
+    search_enabled: document.getElementById('cfgSearchEnabled').value === 'true',
+  };
+  try {
+    const r = await fetch('/api/ai/config/', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)});
+    const res = await r.json();
+    alert(res.msg || '保存成功');
+    loadAIConfig();
+  } catch(e) { alert('保存失败: ' + e); }
+}
+
+async function runAISearch() {
+  const btn = document.getElementById('btnAISearch');
+  const resultDiv = document.getElementById('aiSearchResult');
+  btn.disabled = true;
+  btn.textContent = '搜索中...';
+  resultDiv.innerHTML = '<div class="loading">AI 搜索进行中，请稍候（可能需要1-2分钟）</div>';
+  try {
+    const r = await fetch('/api/ai/search/', {method: 'POST'});
+    const res = await r.json();
+    if (res.code === 1) {
+      const srcList = (res.sources_added || []).map(s => '<div style="font-size:12px;color:#5bd58a;margin:2px 0">' + (s.url || s.name) + '</div>').join('');
+      resultDiv.innerHTML = `
+        <div class="card" style="margin-bottom:8px"><div class="label">搜索结果</div>
+          <div class="value" style="font-size:18px">发现 ${res.proxies_found} 个代理，验证 ${res.proxies_validated} 个</div></div>
+        ${srcList ? '<div style="margin-top:8px"><div class="label">新增 AI 源:</div>' + srcList + '</div>' : ''}`;
+    } else {
+      resultDiv.innerHTML = '<div style="color:#d55b5b">' + (res.msg || '搜索失败') + '</div>';
+    }
+    loadAIConfig();
+  } catch(e) {
+    resultDiv.innerHTML = '<div style="color:#d55b5b">请求失败: ' + e + '</div>';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '立即执行 AI 搜索';
+  }
+}
+
 // --- Main ---
 async function refreshAll() {
   try {
-    await Promise.all([loadSources(), loadStats(), loadActivity()]);
+    await Promise.all([loadSources(), loadStats(), loadActivity(), loadAIConfig()]);
     document.getElementById('lastUpdate').textContent = '更新于 ' + new Date().toLocaleTimeString();
   } catch(e) {
     console.error('refresh error:', e);

@@ -402,6 +402,73 @@ def apiDashboardActivity():
     return activity
 
 
+# ===================== AI Config API =====================
+
+@app.route('/api/ai/config/', methods=['GET'])
+def apiAiConfigGet():
+    """获取当前 AI 配置（API Key 脱敏）"""
+    _conf = ConfigHandler()
+    key = _conf.aiApiKey
+    masked = '****' + key[-4:] if len(key) > 4 else ('****' if key else '')
+    return {
+        "api_key_masked": masked,
+        "api_key_set": bool(key),
+        "api_base_url": _conf.aiApiBaseUrl,
+        "model": _conf.aiModel,
+        "search_enabled": _conf.aiSearchEnabled,
+        "search_hour": _conf.aiSearchHour,
+        "max_sources": _conf.aiMaxSources,
+        "api_timeout": _conf.aiApiTimeout,
+    }
+
+
+@app.route('/api/ai/config/', methods=['POST'])
+def apiAiConfigPost():
+    """保存 AI 配置到 INI 文件"""
+    data = request.get_json(force=True)
+    # 如果 api_key 为 ****掩码则保留原值
+    if data.get('api_key', '') in ('', '****') or data.get('api_key', '').startswith('****'):
+        _conf = ConfigHandler()
+        data['api_key'] = _conf.aiApiKey
+    ConfigHandler.save_ai_config(data)
+    return {"code": 1, "msg": "配置已保存"}
+
+
+@app.route('/api/ai/search/', methods=['POST'])
+def apiAiSearch():
+    """手动触发 AI 代理搜索"""
+    _conf = ConfigHandler()
+    if not _conf.aiApiKey:
+        return {"code": 0, "msg": "AI search disabled: API Key 未配置"}
+    try:
+        from helper.aiSearch import AISearch
+        from util.six import Queue
+        from helper.check import Checker
+        ai = AISearch()
+        proxies = ai.search_proxies()
+        proxy_queue = Queue()
+        for proxy_str in proxies:
+            proxy_queue.put(Proxy(proxy_str, source="aiProxySearch"))
+        queue_size = proxy_queue.qsize()
+        if queue_size > 0:
+            Checker("raw", proxy_queue)
+
+        # 获取 AI 发现的源列表
+        from handler.sourceHandler import SourceLoader
+        ai_sources = SourceLoader().get_ai_sources()
+
+        return {
+            "code": 1,
+            "msg": "AI 搜索完成",
+            "proxies_found": len(proxies),
+            "proxies_validated": queue_size,
+            "sources_added": [{"name": s.name, "url": s.url, "description": s.description}
+                              for s in ai_sources],
+        }
+    except Exception as e:
+        return {"code": 0, "msg": str(e)}
+
+
 def runFlask():
     if platform.system() == "Windows":
         app.run(host=conf.serverHost, port=conf.serverPort)

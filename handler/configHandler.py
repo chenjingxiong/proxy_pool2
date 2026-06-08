@@ -13,16 +13,64 @@
 __author__ = 'JHao'
 
 import os
+import configparser
 import setting
 from util.singleton import Singleton
 from util.lazyProperty import LazyProperty
 from util.six import reload_six, withMetaclass
+
+AI_CONFIG_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'conf', 'ai_config.ini'
+)
+
+_AI_PROPERTIES = [
+    'aiApiKey', 'aiApiBaseUrl', 'aiModel',
+    'aiSearchEnabled', 'aiSearchHour', 'aiMaxSources', 'aiApiTimeout',
+]
+
+
+def _load_ai_config():
+    """读取 conf/ai_config.ini, 返回 dict"""
+    config = configparser.ConfigParser()
+    if os.path.isfile(AI_CONFIG_FILE):
+        config.read(AI_CONFIG_FILE, encoding='utf-8')
+    if config.has_section('ai'):
+        return dict(config.items('ai'))
+    return {}
 
 
 class ConfigHandler(withMetaclass(Singleton)):
 
     def __init__(self):
         pass
+
+    @classmethod
+    def save_ai_config(cls, data):
+        """写入 AI 配置到 INI 文件并清除缓存"""
+        config = configparser.ConfigParser()
+        config.add_section('ai')
+        mapping = {
+            'api_key': data.get('api_key', ''),
+            'api_base_url': data.get('api_base_url', ''),
+            'model': data.get('model', ''),
+            'search_enabled': 'true' if data.get('search_enabled') else 'false',
+            'search_hour': str(data.get('search_hour', 3)),
+            'max_sources': str(data.get('max_sources', 10)),
+            'api_timeout': str(data.get('api_timeout', 60)),
+        }
+        for k, v in mapping.items():
+            config.set('ai', k, v)
+
+        os.makedirs(os.path.dirname(AI_CONFIG_FILE), exist_ok=True)
+        with open(AI_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            config.write(f)
+
+        # 清除 Singleton 实例上的 LazyProperty 缓存
+        inst = cls()
+        for prop in _AI_PROPERTIES:
+            if hasattr(inst, prop):
+                delattr(inst, prop)
 
     @LazyProperty
     def serverHost(self):
@@ -86,20 +134,27 @@ class ConfigHandler(withMetaclass(Singleton)):
     def timezone(self):
         return os.getenv("TIMEZONE", setting.TIMEZONE)
 
+    def _ai_cfg(self, key, default):
+        ini = _load_ai_config()
+        return ini.get(key, default)
+
     @LazyProperty
     def aiApiKey(self):
-        return os.getenv("AI_API_KEY", setting.AI_API_KEY)
+        return self._ai_cfg('api_key', os.getenv("AI_API_KEY", setting.AI_API_KEY))
 
     @LazyProperty
     def aiApiBaseUrl(self):
-        return os.getenv("AI_API_BASE_URL", setting.AI_API_BASE_URL)
+        return self._ai_cfg('api_base_url', os.getenv("AI_API_BASE_URL", setting.AI_API_BASE_URL))
 
     @LazyProperty
     def aiModel(self):
-        return os.getenv("AI_MODEL", setting.AI_MODEL)
+        return self._ai_cfg('model', os.getenv("AI_MODEL", setting.AI_MODEL))
 
     @LazyProperty
     def aiSearchEnabled(self):
+        ini = _load_ai_config()
+        if 'search_enabled' in ini:
+            return ini['search_enabled'].lower() in ('1', 'true', 'yes')
         env_val = os.getenv("AI_SEARCH_ENABLED")
         if env_val is not None:
             return env_val.lower() in ("1", "true", "yes")
@@ -107,13 +162,13 @@ class ConfigHandler(withMetaclass(Singleton)):
 
     @LazyProperty
     def aiSearchHour(self):
-        return int(os.getenv("AI_SEARCH_HOUR", setting.AI_SEARCH_HOUR))
+        return int(self._ai_cfg('search_hour', os.getenv("AI_SEARCH_HOUR", setting.AI_SEARCH_HOUR)))
 
     @LazyProperty
     def aiMaxSources(self):
-        return int(os.getenv("AI_MAX_SOURCES", setting.AI_MAX_SOURCES))
+        return int(self._ai_cfg('max_sources', os.getenv("AI_MAX_SOURCES", setting.AI_MAX_SOURCES)))
 
     @LazyProperty
     def aiApiTimeout(self):
-        return int(os.getenv("AI_API_TIMEOUT", setting.AI_API_TIMEOUT))
+        return int(self._ai_cfg('api_timeout', os.getenv("AI_API_TIMEOUT", setting.AI_API_TIMEOUT)))
 
