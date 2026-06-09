@@ -247,7 +247,12 @@ def aiSearch():
             proxy_queue.put(Proxy(proxy_str, source="aiProxySearch"))
         queue_size = proxy_queue.qsize()
         if queue_size > 0:
-            Checker("raw", proxy_queue)
+            import threading
+            threading.Thread(
+                target=lambda q: Checker("raw", q),
+                args=(proxy_queue,),
+                daemon=True
+            ).start()
         return {
             "code": 1,
             "msg": "AI search complete",
@@ -451,7 +456,13 @@ def apiAiSearch():
             proxy_queue.put(Proxy(proxy_str, source="aiProxySearch"))
         queue_size = proxy_queue.qsize()
         if queue_size > 0:
-            Checker("raw", proxy_queue)
+            import threading
+            checker_thread = threading.Thread(
+                target=lambda q: Checker("raw", q),
+                args=(proxy_queue,),
+                daemon=True
+            )
+            checker_thread.start()
 
         # 获取 AI 发现的源列表
         from handler.sourceHandler import SourceLoader
@@ -459,9 +470,9 @@ def apiAiSearch():
 
         return {
             "code": 1,
-            "msg": "AI 搜索完成",
+            "msg": "AI 搜索完成，代理验证已在后台进行",
             "proxies_found": len(proxies),
-            "proxies_validated": queue_size,
+            "proxies_to_validate": queue_size,
             "sources_added": [{"name": s.name, "url": s.url, "description": s.description}
                               for s in ai_sources],
         }
