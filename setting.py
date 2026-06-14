@@ -113,10 +113,10 @@ PROXY_FETCHER = [
 ]
 
 # ############# proxy validator #################
-# 代理验证目标网站
-HTTP_URL = "http://httpbin.org"
+# 代理验证目标网站（仅作配置记录，验证器内已硬编码）
+HTTP_URL = "http://www.baidu.com"
 
-HTTPS_URL = "https://www.qq.com"
+HTTPS_URL = "https://ipaddress.my/zh_cn/"
 
 # 代理验证时超时时间
 VERIFY_TIMEOUT = 10

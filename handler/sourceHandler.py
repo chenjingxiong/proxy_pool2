@@ -126,10 +126,22 @@ class SourceLoader(withMetaclass(Singleton)):
 
     def add_ai_sources(self, discovered_urls):
         """
-        AI发现的代理源写入新的INI文件
+        AI发现的代理源写入新的INI文件（带URL去重）
         discovered_urls: list of dict {url, method, description, proxy_count}
         """
         if not discovered_urls:
+            return
+
+        # 去重：收集已存在的 URL
+        existing_urls = set()
+        for src in self.get_all_sources():
+            if src.type != 'builtin' and src.url:
+                existing_urls.add(src.url)
+
+        new_sources = [item for item in discovered_urls
+                       if item.get('url', '') not in existing_urls]
+
+        if not new_sources:
             return
 
         os.makedirs(self._sources_dir, exist_ok=True)
@@ -140,9 +152,9 @@ class SourceLoader(withMetaclass(Singleton)):
 
         config = configparser.ConfigParser()
         config.set('DEFAULT', 'created', time.strftime('%Y-%m-%d %H:%M:%S'))
-        config.set('DEFAULT', 'total_sources', str(len(discovered_urls)))
+        config.set('DEFAULT', 'total_sources', str(len(new_sources)))
 
-        for i, item in enumerate(discovered_urls, 1):
+        for i, item in enumerate(new_sources, 1):
             section = f'source_{i}'
             config.add_section(section)
             config.set(section, 'type', 'url_text')
