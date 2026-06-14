@@ -31,15 +31,47 @@ _AI_PROPERTIES = [
 
 
 def _load_ai_config():
-    """读取 conf/ai_config.ini, 返回 dict"""
+    """读取 conf/ai_config.ini, 环境变量优先覆盖（仅内存，不写回磁盘）"""
+    result = {}
     config = configparser.ConfigParser()
     if os.path.isfile(AI_CONFIG_FILE):
         config.read(AI_CONFIG_FILE, encoding='utf-8')
         if config.has_section('ai'):
-            return dict(config.items('ai'))
-        return {}
-    # 首次启动：INI 不存在时从环境变量 seed 一份
-    env_seed = {
+            result = dict(config.items('ai'))
+    else:
+        # 首次启动：INI 不存在时从环境变量 seed 一份
+        env_seed = {
+            'api_key': os.getenv('AI_API_KEY', ''),
+            'api_base_url': os.getenv('AI_API_BASE_URL', ''),
+            'model': os.getenv('AI_MODEL', ''),
+            'search_hour': os.getenv('AI_SEARCH_HOUR', ''),
+            'max_sources': os.getenv('AI_MAX_SOURCES', ''),
+            'api_timeout': os.getenv('AI_API_TIMEOUT', ''),
+        }
+        env_se_enabled = os.getenv('AI_SEARCH_ENABLED')
+        if env_se_enabled is not None:
+            env_seed['search_enabled'] = 'true' if env_se_enabled.lower() in ('1', 'true', 'yes') else 'false'
+        elif os.getenv('AI_API_KEY'):
+            env_seed['search_enabled'] = 'true'
+        else:
+            env_seed['search_enabled'] = 'false'
+
+        has_any = any(v for v in env_seed.values())
+        if has_any:
+            env_sourced_keys = [k for k, v in env_seed.items() if v]
+            config.add_section('ai')
+            for k, v in env_seed.items():
+                if v:
+                    config.set('ai', k, v)
+            config.add_section('metadata')
+            config.set('metadata', 'env_sourced', ','.join(env_sourced_keys))
+            os.makedirs(os.path.dirname(AI_CONFIG_FILE), exist_ok=True)
+            with open(AI_CONFIG_FILE, 'w', encoding='utf-8') as f:
+                config.write(f)
+            result = {k: v for k, v in env_seed.items() if v}
+
+    # 环境变量覆盖（仅内存）— 修复 .env 修改后不生效的问题
+    env_override = {
         'api_key': os.getenv('AI_API_KEY', ''),
         'api_base_url': os.getenv('AI_API_BASE_URL', ''),
         'model': os.getenv('AI_MODEL', ''),
@@ -49,39 +81,28 @@ def _load_ai_config():
     }
     env_se_enabled = os.getenv('AI_SEARCH_ENABLED')
     if env_se_enabled is not None:
-        env_seed['search_enabled'] = 'true' if env_se_enabled.lower() in ('1', 'true', 'yes') else 'false'
-    elif os.getenv('AI_API_KEY'):
-        env_seed['search_enabled'] = 'true'
-    else:
-        env_seed['search_enabled'] = 'false'
+        env_override['search_enabled'] = 'true' if env_se_enabled.lower() in ('1', 'true', 'yes') else 'false'
+    for k, v in env_override.items():
+        if v:
+            result[k] = v
 
-    # 过滤空值，保留有实际值的
-    has_any = any(v for v in env_seed.values())
-    if has_any:
-        env_sourced_keys = [k for k, v in env_seed.items() if v]
-        config.add_section('ai')
-        for k, v in env_seed.items():
-            if v:
-                config.set('ai', k, v)
-        config.add_section('metadata')
-        config.set('metadata', 'env_sourced', ','.join(env_sourced_keys))
-        os.makedirs(os.path.dirname(AI_CONFIG_FILE), exist_ok=True)
-        with open(AI_CONFIG_FILE, 'w', encoding='utf-8') as f:
-            config.write(f)
-        return {k: v for k, v in env_seed.items() if v}
-    return {}
+    return result
 
 
 def _get_env_sourced_keys():
-    """读取 INI 中记录的来自环境变量的配置项"""
-    if not os.path.isfile(AI_CONFIG_FILE):
-        return []
-    config = configparser.ConfigParser()
-    config.read(AI_CONFIG_FILE, encoding='utf-8')
-    if config.has_option('metadata', 'env_sourced'):
-        val = config.get('metadata', 'env_sourced')
-        return [k.strip() for k in val.split(',') if k.strip()]
-    return []
+    """返回当前由环境变量提供的配置项（实际非空的环境变量）"""
+    env_map = {
+        'api_key': os.getenv('AI_API_KEY', ''),
+        'api_base_url': os.getenv('AI_API_BASE_URL', ''),
+        'model': os.getenv('AI_MODEL', ''),
+        'search_hour': os.getenv('AI_SEARCH_HOUR', ''),
+        'max_sources': os.getenv('AI_MAX_SOURCES', ''),
+        'api_timeout': os.getenv('AI_API_TIMEOUT', ''),
+    }
+    se = os.getenv('AI_SEARCH_ENABLED')
+    if se is not None:
+        env_map['search_enabled'] = se
+    return [k for k, v in env_map.items() if v]
 
 
 class ConfigHandler(withMetaclass(Singleton)):
@@ -92,6 +113,19 @@ class ConfigHandler(withMetaclass(Singleton)):
     @classmethod
     def save_ai_config(cls, data):
         """写入 AI 配置到 INI 文件并清除缓存"""
+        # 如果环境变量有值且 UI 传来空值，保留环境变量的值
+        env_protection = {
+            'api_key': os.getenv('AI_API_KEY', ''),
+            'api_base_url': os.getenv('AI_API_BASE_URL', ''),
+            'model': os.getenv('AI_MODEL', ''),
+            'search_hour': os.getenv('AI_SEARCH_HOUR', ''),
+            'max_sources': os.getenv('AI_MAX_SOURCES', ''),
+            'api_timeout': os.getenv('AI_API_TIMEOUT', ''),
+        }
+        for k, env_val in env_protection.items():
+            if env_val and not data.get(k, ''):
+                data[k] = env_val
+
         config = configparser.ConfigParser()
         config.add_section('ai')
         mapping = {
@@ -185,7 +219,8 @@ class ConfigHandler(withMetaclass(Singleton)):
 
     def _ai_cfg(self, key, default):
         ini = _load_ai_config()
-        return ini.get(key, default)
+        val = ini.get(key, '')
+        return val if val else default
 
     @LazyProperty
     def aiApiKey(self):
