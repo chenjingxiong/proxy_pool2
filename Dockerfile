@@ -24,8 +24,11 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # Start with gunicorn via the project entry point
 CMD ["gunicorn", \
      "--bind", "0.0.0.0:5010", \
-     "--workers", "4", \
-     "--timeout", "300", \
+     "--workers", "6", \
+     "--timeout", "120", \
+     "--graceful-timeout", "30", \
+     "--max-requests", "1000", \
+     "--max-requests-jitter", "50", \
      "--access-logfile", "-", \
      "--access-logformat", "%(h)s %(l)s %(t)s \"%(r)s\" %(s)s \"%(a)s\"", \
      "api.proxyApi:app"]

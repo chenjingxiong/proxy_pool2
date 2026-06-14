@@ -58,15 +58,30 @@ def _load_ai_config():
     # 过滤空值，保留有实际值的
     has_any = any(v for v in env_seed.values())
     if has_any:
+        env_sourced_keys = [k for k, v in env_seed.items() if v]
         config.add_section('ai')
         for k, v in env_seed.items():
             if v:
                 config.set('ai', k, v)
+        config.add_section('metadata')
+        config.set('metadata', 'env_sourced', ','.join(env_sourced_keys))
         os.makedirs(os.path.dirname(AI_CONFIG_FILE), exist_ok=True)
         with open(AI_CONFIG_FILE, 'w', encoding='utf-8') as f:
             config.write(f)
         return {k: v for k, v in env_seed.items() if v}
     return {}
+
+
+def _get_env_sourced_keys():
+    """读取 INI 中记录的来自环境变量的配置项"""
+    if not os.path.isfile(AI_CONFIG_FILE):
+        return []
+    config = configparser.ConfigParser()
+    config.read(AI_CONFIG_FILE, encoding='utf-8')
+    if config.has_option('metadata', 'env_sourced'):
+        val = config.get('metadata', 'env_sourced')
+        return [k.strip() for k in val.split(',') if k.strip()]
+    return []
 
 
 class ConfigHandler(withMetaclass(Singleton)):
@@ -90,6 +105,11 @@ class ConfigHandler(withMetaclass(Singleton)):
         }
         for k, v in mapping.items():
             config.set('ai', k, v)
+        # 保留 metadata section
+        env_sourced = _get_env_sourced_keys()
+        if env_sourced:
+            config.add_section('metadata')
+            config.set('metadata', 'env_sourced', ','.join(env_sourced))
 
         os.makedirs(os.path.dirname(AI_CONFIG_FILE), exist_ok=True)
         with open(AI_CONFIG_FILE, 'w', encoding='utf-8') as f:

@@ -11,7 +11,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .header{background:#1a1d29;border-bottom:1px solid #2a2d3a;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
 .header h1{font-size:20px;color:#7c8aff;letter-spacing:1px}
 .header .status{font-size:13px;color:#888}
-.tabs{display:flex;background:#1a1d29;border-bottom:1px solid #2a2d3a;padding:0 24px}
+.tabs{display:flex;background:#1a1d29;border-bottom:1px solid #2a2d3a;padding:0 24px;flex-wrap:wrap}
 .tab{padding:12px 20px;cursor:pointer;color:#888;font-size:14px;border-bottom:2px solid transparent;transition:all .2s}
 .tab:hover{color:#bbb}
 .tab.active{color:#7c8aff;border-bottom-color:#7c8aff}
@@ -40,13 +40,14 @@ tr:hover td{background:#1e2133}
 .btn-primary:hover{background:#6a78e0}
 .btn-success{background:#2d9147;color:#fff}
 .btn-success:hover{background:#257a3b}
-.btn-danger{background:#c0392b;color:#fff;width:100%}
+.btn-danger{background:#c0392b;color:#fff}
 .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
 .badge.builtin{background:#1a3a5c;color:#5b9bd5}
 .badge.url_text{background:#1a3c2a;color:#5bd58a}
 .badge.dynamic{background:#3c2a1a;color:#d58a5b}
 .badge.on{background:#1a3c2a;color:#5bd58a}
 .badge.off{background:#3c1a1a;color:#d55b5b}
+.badge.env{background:#1a3a5c;color:#5b9bd5;margin-left:6px}
 .api-item{background:#1a1d29;border:1px solid #2a2d3a;border-radius:8px;padding:16px;margin-bottom:12px}
 .api-item h3{color:#7c8aff;font-size:14px;margin-bottom:8px}
 .api-item .url{color:#5bd58a;font-family:monospace;font-size:13px;margin-bottom:6px}
@@ -54,6 +55,13 @@ tr:hover td{background:#1e2133}
 .api-item pre{background:#0f1117;border-radius:4px;padding:10px;font-size:12px;color:#aaa;overflow-x:auto}
 .table-wrap{max-height:600px;overflow-y:auto;border-radius:8px}
 .loading{text-align:center;padding:40px;color:#666}
+.btn-sm{padding:4px 12px;font-size:12px}
+.sort-btn{padding:4px 12px;font-size:12px;background:#2a2d3a;color:#aaa;border:1px solid #3a3d4a;border-radius:4px;cursor:pointer}
+.sort-btn:hover{color:#e0e0e0}
+.sort-btn.active{background:#7c8aff;color:#fff;border-color:#7c8aff}
+.selected-row td{background:#1a2a4a !important}
+iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radius:8px;background:#fff}
+.section-title{font-size:14px;color:#aaa;margin:16px 0 8px}
 </style>
 </head>
 <body>
@@ -62,26 +70,18 @@ tr:hover td{background:#1e2133}
   <div class="status" id="lastUpdate">-</div>
 </div>
 <div class="tabs">
-  <div class="tab active" data-tab="sources">代理源管理</div>
-  <div class="tab" data-tab="stats">代理统计</div>
+  <div class="tab active" data-tab="stats">代理统计</div>
   <div class="tab" data-tab="proxy_list">代理列表</div>
-  <div class="tab" data-tab="api">API 文档</div>
-  <div class="tab" data-tab="activity">每日动态</div>
+  <div class="tab" data-tab="proxy_test">代理测试</div>
   <div class="tab" data-tab="ai_config">AI 配置</div>
+  <div class="tab" data-tab="activity">每日动态</div>
+  <div class="tab" data-tab="sources">代理源管理</div>
+  <div class="tab" data-tab="api">API 文档</div>
 </div>
 <div class="content">
 
-<!-- Tab: Sources -->
-<div class="panel active" id="panel-sources">
-  <div class="cards" id="sourceCards"></div>
-  <div class="table-wrap">
-    <table><thead><tr><th>名称</th><th>类型</th><th>描述</th><th>来源文件</th><th>贡献代理数</th><th>状态</th></tr></thead>
-    <tbody id="sourceTable"></tbody></table>
-  </div>
-</div>
-
 <!-- Tab: Stats -->
-<div class="panel" id="panel-stats">
+<div class="panel active" id="panel-stats">
   <div class="cards" id="statCards"></div>
   <div class="charts">
     <div class="chart-box"><h3>HTTP / HTTPS 分布</h3><canvas id="chartProtocol"></canvas></div>
@@ -119,52 +119,84 @@ tr:hover td{background:#1e2133}
         <option value="100">100</option>
       </select>
     </div>
+    <div class="form-group" style="margin:0;display:flex;align-items:flex-end">
+      <button class="btn btn-primary" onclick="loadProxyList()">刷新</button>
+    </div>
     <div style="flex:1"></div>
     <div style="font-size:13px;color:#888" id="proxyListInfo"></div>
   </div>
-  <div class="table-wrap" style="max-height:500px">
+  <div class="table-wrap" style="max-height:560px">
     <table>
       <thead><tr>
-        <th>代理地址</th><th>类型</th><th>速度(s)</th><th>验证次数</th>
+        <th>代理地址</th><th>类型</th><th>延时(s)</th><th>验证次数</th>
         <th>使用次数</th><th>状态</th><th>最近检查</th><th>来源</th><th>操作</th>
       </tr></thead>
       <tbody id="proxyListTable"></tbody>
     </table>
   </div>
   <div style="display:flex;justify-content:center;gap:8px;margin-top:16px" id="proxyListPager"></div>
+</div>
 
-  <div class="chart-box" style="margin-top:24px">
-    <h3>代理测试</h3>
-    <div style="margin-top:8px">
-      <div class="form-row">
-        <div class="form-group"><label>目标 URL</label>
-          <input id="testTargetUrl" value="https://ipaddress.my/zh_cn/" placeholder="https://example.com">
-        </div>
-        <div class="form-group"><label>代理地址（留空随机选择）</label>
-          <input id="testProxyAddr" placeholder="1.2.3.4:8080">
-        </div>
-        <div class="form-group" style="display:flex;align-items:flex-end">
-          <button class="btn btn-primary" id="btnProxyTest" onclick="runProxyTest()">测试代理</button>
+<!-- Tab: Proxy Test -->
+<div class="panel" id="panel-proxy_test">
+  <div class="chart-box">
+    <h3>选择代理</h3>
+    <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
+      <div class="form-group" style="margin:0">
+        <label>协议过滤</label>
+        <select id="proxyTestFilterHttps" onchange="loadProxyTestList(1)">
+          <option value="">全部</option>
+          <option value="1">仅 HTTPS</option>
+          <option value="0">仅 HTTP</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label>延时排序</label>
+        <div style="display:flex;gap:6px">
+          <button type="button" class="sort-btn active" id="sortBtnAsc" onclick="toggleProxyTestSort('asc')">升序 (快→慢)</button>
+          <button type="button" class="sort-btn" id="sortBtnDesc" onclick="toggleProxyTestSort('desc')">降序 (慢→快)</button>
         </div>
       </div>
-      <div id="proxyTestResult" style="margin-top:12px"></div>
+      <div class="form-group" style="margin:0">
+        <label>每页数量</label>
+        <select id="proxyTestPageSize" onchange="loadProxyTestList(1)">
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <div style="flex:1"></div>
+      <div style="font-size:13px;color:#888" id="proxyTestListInfo"></div>
+    </div>
+    <div class="table-wrap" style="max-height:340px">
+      <table>
+        <thead><tr>
+          <th>代理地址</th><th>类型</th><th>延时(s)</th><th>状态</th><th>操作</th>
+        </tr></thead>
+        <tbody id="proxyTestTable"></tbody>
+      </table>
+    </div>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:12px" id="proxyTestPager"></div>
+  </div>
+
+  <div class="chart-box" style="margin-top:16px">
+    <h3>测试配置</h3>
+    <div class="form-row">
+      <div class="form-group"><label>目标 URL</label>
+        <input id="testTargetUrl" value="https://ipaddress.my/zh_cn/" placeholder="https://example.com">
+      </div>
+      <div class="form-group"><label>代理地址（点击上方"选中"或手动输入，留空随机）</label>
+        <input id="testProxyAddr" placeholder="1.2.3.4:8080">
+      </div>
+      <div class="form-group" style="display:flex;align-items:flex-end">
+        <button class="btn btn-primary" id="btnProxyTest" onclick="runProxyTest()">开始测试</button>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- Tab: API -->
-<div class="panel" id="panel-api">
-  <div id="apiDocs"></div>
-</div>
-
-<!-- Tab: Activity -->
-<div class="panel" id="panel-activity">
-  <div class="charts">
-    <div class="chart-box"><h3>AI 搜索历史</h3>
-      <table><thead><tr><th>时间</th><th>发现数</th><th>直接搜索</th><th>源探索</th></tr></thead>
-      <tbody id="aiLogTable"></tbody></table>
-    </div>
-    <div class="chart-box"><h3>每日新增代理</h3><canvas id="chartDaily"></canvas></div>
+  <div class="chart-box" style="margin-top:16px" id="proxyTestResultBox" style="display:none">
+    <h3>测试结果</h3>
+    <div id="proxyTestResult"></div>
   </div>
 </div>
 
@@ -175,19 +207,19 @@ tr:hover td{background:#1e2133}
       <h3>AI 搜索配置</h3>
       <div style="margin-top:8px">
         <div class="form-row">
-          <div class="form-group"><label>API Base URL</label><input id="cfgBaseUrl" placeholder="https://api.openai.com/v1"></div>
-          <div class="form-group"><label>API Key</label><input id="cfgApiKey" type="password" placeholder="sk-..."></div>
+          <div class="form-group"><label>API Base URL <span id="envLabel_api_base_url"></span></label><input id="cfgBaseUrl" placeholder="https://api.openai.com/v1"></div>
+          <div class="form-group"><label>API Key <span id="envLabel_api_key"></span></label><input id="cfgApiKey" type="password" placeholder="sk-..."></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>模型</label><input id="cfgModel" placeholder="gpt-3.5-turbo"></div>
-          <div class="form-group"><label>搜索时间（小时 0-23）</label><input id="cfgSearchHour" type="number" min="0" max="23"></div>
+          <div class="form-group"><label>模型 <span id="envLabel_model"></span></label><input id="cfgModel" placeholder="gpt-3.5-turbo"></div>
+          <div class="form-group"><label>搜索时间（小时 0-23） <span id="envLabel_search_hour"></span></label><input id="cfgSearchHour" type="number" min="0" max="23"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>最大探索源数</label><input id="cfgMaxSources" type="number" min="1" max="20"></div>
-          <div class="form-group"><label>API 超时（秒）</label><input id="cfgApiTimeout" type="number" min="10" max="300"></div>
+          <div class="form-group"><label>最大探索源数 <span id="envLabel_max_sources"></span></label><input id="cfgMaxSources" type="number" min="1" max="20"></div>
+          <div class="form-group"><label>API 超时（秒） <span id="envLabel_api_timeout"></span></label><input id="cfgApiTimeout" type="number" min="10" max="300"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>启用定时搜索</label>
+          <div class="form-group"><label>启用定时搜索 <span id="envLabel_search_enabled"></span></label>
             <select id="cfgSearchEnabled"><option value="true">启用</option><option value="false">禁用</option></select>
           </div>
           <div class="form-group" style="display:flex;align-items:flex-end">
@@ -214,11 +246,40 @@ tr:hover td{background:#1e2133}
   </div>
 </div>
 
+<!-- Tab: Activity -->
+<div class="panel" id="panel-activity">
+  <div class="charts">
+    <div class="chart-box"><h3>AI 搜索历史</h3>
+      <table><thead><tr><th>时间</th><th>发现数</th><th>直接搜索</th><th>源探索</th></tr></thead>
+      <tbody id="aiLogTable"></tbody></table>
+    </div>
+    <div class="chart-box"><h3>每日新增代理</h3><canvas id="chartDaily"></canvas></div>
+  </div>
+</div>
+
+<!-- Tab: Sources -->
+<div class="panel" id="panel-sources">
+  <div class="cards" id="sourceCards"></div>
+  <div class="table-wrap">
+    <table><thead><tr><th>名称</th><th>类型</th><th>描述</th><th>来源文件</th><th>贡献代理数</th><th>状态</th></tr></thead>
+    <tbody id="sourceTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Tab: API -->
+<div class="panel" id="panel-api">
+  <div id="apiDocs"></div>
+</div>
+
 </div>
 
 <script>
 const API_BASE = '';
 let charts = {};
+let proxyListPage = 1;
+let proxyTestPage = 1;
+let proxyTestSortOrder = 'asc';
+let selectedProxyForTest = '';
 
 // --- Tab switching ---
 document.querySelectorAll('.tab').forEach(t => {
@@ -240,6 +301,26 @@ function destroyChart(id) {
   if (charts[id]) { charts[id].destroy(); charts[id] = null; }
 }
 
+function escapeHtml(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderPager(containerId, currentPage, totalPages, loadFnName) {
+  const c = document.getElementById(containerId);
+  if (totalPages <= 1) { c.innerHTML = ''; return; }
+  const maxBtns = 7;
+  let startP = Math.max(1, currentPage - 3);
+  let endP = Math.min(totalPages, startP + maxBtns - 1);
+  if (endP - startP < maxBtns - 1) startP = Math.max(1, endP - maxBtns + 1);
+  let html = '';
+  if (currentPage > 1) html += `<button class="btn btn-primary btn-sm" onclick="${loadFnName}(${currentPage - 1})">上一页</button>`;
+  for (let i = startP; i <= endP; i++) {
+    html += `<button class="btn ${i === currentPage ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="${loadFnName}(${i})">${i}</button>`;
+  }
+  if (currentPage < totalPages) html += `<button class="btn btn-primary btn-sm" onclick="${loadFnName}(${currentPage + 1})">下一页</button>`;
+  c.innerHTML = html;
+}
+
 // --- Sources ---
 async function loadSources() {
   const data = await fetchJSON('/api/sources/');
@@ -258,10 +339,10 @@ async function loadSources() {
 
   const tbody = document.getElementById('sourceTable');
   tbody.innerHTML = sources.map(s => `<tr>
-    <td style="font-family:monospace">${s.name}</td>
+    <td style="font-family:monospace">${escapeHtml(s.name)}</td>
     <td><span class="badge ${s.type}">${s.type}</span></td>
-    <td>${s.description || '-'}</td>
-    <td style="font-size:11px;color:#666">${s.source_file || '-'}</td>
+    <td>${escapeHtml(s.description) || '-'}</td>
+    <td style="font-size:11px;color:#666">${escapeHtml(s.source_file) || '-'}</td>
     <td>${s.contributed}</td>
     <td><span class="badge ${s.enabled ? 'on' : 'off'}">${s.enabled ? '启用' : '禁用'}</span></td>
   </tr>`).join('');
@@ -280,7 +361,6 @@ async function loadStats() {
     <div class="card"><div class="label">平均速度</div><div class="value">${d.speed.avg}s</div>
       <div class="sub">min ${d.speed.min}s / max ${d.speed.max}s</div></div>`;
 
-  // Protocol pie
   destroyChart('chartProtocol');
   charts.chartProtocol = new Chart(document.getElementById('chartProtocol'), {
     type: 'doughnut',
@@ -289,7 +369,6 @@ async function loadStats() {
     options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } } }
   });
 
-  // Health pie
   destroyChart('chartHealth');
   charts.chartHealth = new Chart(document.getElementById('chartHealth'), {
     type: 'doughnut',
@@ -298,7 +377,6 @@ async function loadStats() {
     options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } } }
   });
 
-  // Speed bar
   const sb = d.speed.distribution;
   destroyChart('chartSpeed');
   charts.chartSpeed = new Chart(document.getElementById('chartSpeed'), {
@@ -309,7 +387,6 @@ async function loadStats() {
       scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888' } } } }
   });
 
-  // Top sources bar
   const ts = d.top_sources || [];
   destroyChart('chartTopSources');
   charts.chartTopSources = new Chart(document.getElementById('chartTopSources'), {
@@ -337,7 +414,7 @@ function loadAPIDocs() {
     { url: 'GET /api/sources/', desc: '获取所有代理源配置', params: '无', example: '/api/sources/', resp: '{"sources": [...], "total": 70}' },
     { url: 'GET /api/dashboard/status/', desc: '仪表盘统计数据', params: '无', example: '/api/dashboard/status/', resp: '{"total": 150, "speed": {...}, ...}' },
     { url: 'GET /api/dashboard/activity/', desc: '每日动态和AI搜索记录', params: '无', example: '/api/dashboard/activity/', resp: '{"ai_search_log": [...], ...}' },
-    { url: 'GET /api/proxies/list/?page=1&size=50&sort=speed&https=1', desc: '代理列表（分页+排序+过滤）', params: 'page: 页码, size: 每页数, sort: speed|check_count|use_count|last_time, https: 1|0|空', example: '/api/proxies/list/?page=1&size=20&sort=speed', resp: '{"total": 150, "page": 1, "proxies": [...]}' },
+    { url: 'GET /api/proxies/list/?page=1&size=50&sort=speed&sort_order=asc&https=1', desc: '代理列表（分页+排序+过滤）', params: 'page, size, sort: speed|check_count|use_count|last_time, sort_order: asc|desc, https: 1|0|空', example: '/api/proxies/list/?page=1&size=20&sort=speed&sort_order=asc', resp: '{"total": 150, "page": 1, "proxies": [...]}' },
     { url: 'POST /api/proxy/test/', desc: '通过代理测试目标URL', params: 'url: 目标URL, proxy: 代理地址(可选)', example: '/api/proxy/test/', resp: '{"code": 1, "proxy_used": "...", "status_code": 200, "elapsed": 1.5}' },
   ];
   document.getElementById('apiDocs').innerHTML = apis.map(a => `
@@ -350,8 +427,6 @@ function loadAPIDocs() {
 }
 
 // --- Proxy List ---
-let proxyListPage = 1;
-
 async function loadProxyList(page) {
   if (page) proxyListPage = page;
   const https = document.getElementById('proxyFilterHttps').value;
@@ -365,55 +440,94 @@ async function loadProxyList(page) {
   const proxies = data.proxies || [];
 
   document.getElementById('proxyListInfo').textContent =
-    `共 ${data.total} 个代理，第 ${data.page}/${Math.ceil(data.total / data.page_size)} 页`;
+    `共 ${data.total} 个代理，第 ${data.page}/${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
 
   const tbody = document.getElementById('proxyListTable');
   tbody.innerHTML = proxies.length
     ? proxies.map(p => `<tr>
-        <td style="font-family:monospace">${p.proxy || '-'}</td>
+        <td style="font-family:monospace">${escapeHtml(p.proxy) || '-'}</td>
         <td><span class="badge ${p.https ? 'on' : 'off'}">${p.https ? 'HTTPS' : 'HTTP'}</span></td>
         <td>${p.speed > 0 ? p.speed.toFixed(3) : '-'}</td>
         <td>${p.check_count || 0}</td>
         <td>${p.use_count || 0}</td>
         <td><span class="badge ${p.last_status ? 'on' : 'off'}">${p.last_status ? '健康' : '异常'}</span></td>
-        <td style="font-size:11px;color:#888">${p.last_time || '-'}</td>
-        <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${p.source || ''}">${p.source || '-'}</td>
-        <td><button class="btn btn-primary" style="padding:2px 10px;font-size:11px" onclick="testProxyFromList('${p.proxy}')">测试</button></td>
+        <td style="font-size:11px;color:#888">${escapeHtml(p.last_time) || '-'}</td>
+        <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.source)}">${escapeHtml(p.source) || '-'}</td>
+        <td><button class="btn btn-primary btn-sm" onclick="testProxyFromList('${escapeHtml(p.proxy)}')">测试</button></td>
       </tr>`).join('')
     : '<tr><td colspan="9" style="text-align:center;color:#666">暂无代理</td></tr>';
 
-  // Pagination
   const totalPages = Math.ceil(data.total / data.page_size);
-  let pagerHtml = '';
-  if (totalPages > 1) {
-    const maxBtns = 7;
-    let startP = Math.max(1, proxyListPage - 3);
-    let endP = Math.min(totalPages, startP + maxBtns - 1);
-    if (endP - startP < maxBtns - 1) startP = Math.max(1, endP - maxBtns + 1);
-    if (proxyListPage > 1) pagerHtml += `<button class="btn btn-primary" style="padding:4px 12px;font-size:12px" onclick="loadProxyList(${proxyListPage - 1})">上一页</button>`;
-    for (let i = startP; i <= endP; i++) {
-      pagerHtml += `<button class="btn ${i === proxyListPage ? 'btn-danger' : 'btn-primary'}" style="padding:4px 12px;font-size:12px" onclick="loadProxyList(${i})">${i}</button>`;
-    }
-    if (proxyListPage < totalPages) pagerHtml += `<button class="btn btn-primary" style="padding:4px 12px;font-size:12px" onclick="loadProxyList(${proxyListPage + 1})">下一页</button>`;
-  }
-  document.getElementById('proxyListPager').innerHTML = pagerHtml;
+  renderPager('proxyListPager', proxyListPage, totalPages, 'loadProxyList');
+}
+
+// --- Proxy Test List (with sort_order asc/desc by latency) ---
+async function loadProxyTestList(page) {
+  if (page) proxyTestPage = page;
+  const https = document.getElementById('proxyTestFilterHttps').value;
+  const size = document.getElementById('proxyTestPageSize').value;
+  const params = new URLSearchParams({page: proxyTestPage, size: size, sort: 'speed', sort_order: proxyTestSortOrder});
+  if (https) params.set('https', https);
+
+  const data = await fetchJSON('/api/proxies/list/?' + params.toString());
+  const proxies = data.proxies || [];
+
+  document.getElementById('proxyTestListInfo').textContent =
+    `共 ${data.total} 个代理，第 ${data.page}/${Math.max(1, Math.ceil(data.total / data.page_size))} 页`;
+
+  const tbody = document.getElementById('proxyTestTable');
+  tbody.innerHTML = proxies.length
+    ? proxies.map(p => {
+        const isSel = selectedProxyForTest === p.proxy ? 'selected-row' : '';
+        return `<tr class="${isSel}">
+          <td style="font-family:monospace">${escapeHtml(p.proxy) || '-'}</td>
+          <td><span class="badge ${p.https ? 'on' : 'off'}">${p.https ? 'HTTPS' : 'HTTP'}</span></td>
+          <td>${p.speed > 0 ? p.speed.toFixed(3) : '-'}</td>
+          <td><span class="badge ${p.last_status ? 'on' : 'off'}">${p.last_status ? '健康' : '异常'}</span></td>
+          <td><button class="btn btn-primary btn-sm" onclick="selectProxyForTest('${escapeHtml(p.proxy)}')">选中</button></td>
+        </tr>`;
+      }).join('')
+    : '<tr><td colspan="5" style="text-align:center;color:#666">暂无代理</td></tr>';
+
+  const totalPages = Math.ceil(data.total / data.page_size);
+  renderPager('proxyTestPager', proxyTestPage, totalPages, 'loadProxyTestList');
+}
+
+function toggleProxyTestSort(order) {
+  proxyTestSortOrder = order;
+  document.getElementById('sortBtnAsc').classList.toggle('active', order === 'asc');
+  document.getElementById('sortBtnDesc').classList.toggle('active', order === 'desc');
+  loadProxyTestList(1);
+}
+
+function selectProxyForTest(proxyAddr) {
+  selectedProxyForTest = proxyAddr;
+  document.getElementById('testProxyAddr').value = proxyAddr;
+  loadProxyTestList();
 }
 
 function testProxyFromList(proxyAddr) {
+  selectedProxyForTest = proxyAddr;
   document.getElementById('testProxyAddr').value = proxyAddr;
-  document.querySelector('[data-tab="proxy_list"]').click();
-  document.getElementById('proxyTestResult').innerHTML = '';
+  document.querySelector('[data-tab="proxy_test"]').click();
+  loadProxyTestList();
+  const box = document.getElementById('proxyTestResultBox');
+  const res = document.getElementById('proxyTestResult');
+  if (box) box.style.display = 'none';
+  if (res) res.innerHTML = '';
 }
 
 async function runProxyTest() {
   const btn = document.getElementById('btnProxyTest');
+  const resultBox = document.getElementById('proxyTestResultBox');
   const resultDiv = document.getElementById('proxyTestResult');
   const targetUrl = document.getElementById('testTargetUrl').value.trim();
   const proxyAddr = document.getElementById('testProxyAddr').value.trim();
 
   btn.disabled = true;
   btn.textContent = '测试中...';
-  resultDiv.innerHTML = '<div class="loading">正在通过代理请求目标 URL，请稍候...</div>';
+  resultBox.style.display = 'block';
+  resultDiv.innerHTML = '<div class="loading">正在通过代理请求目标 URL，请稍候（最长约 15 秒）...</div>';
 
   try {
     const r = await fetch('/api/proxy/test/', {
@@ -423,25 +537,29 @@ async function runProxyTest() {
     });
     const res = await r.json();
     if (res.code === 1) {
+      const content = res.content || '';
+      const srcDoc = escapeHtml(content);
       resultDiv.innerHTML = `
         <div class="cards" style="margin-bottom:12px">
-          <div class="card"><div class="label">使用代理</div><div class="value" style="font-size:16px">${res.proxy_used}</div></div>
+          <div class="card"><div class="label">使用代理</div><div class="value" style="font-size:16px">${escapeHtml(res.proxy_used)}</div></div>
           <div class="card"><div class="label">状态码</div><div class="value" style="font-size:16px">${res.status_code}</div></div>
           <div class="card"><div class="label">耗时</div><div class="value" style="font-size:16px">${res.elapsed}s</div></div>
-          <div class="card"><div class="label">检测到IP</div><div class="value" style="font-size:14px">${(res.detected_ips || []).join(', ') || '-'}</div></div>
+          <div class="card"><div class="label">检测到IP</div><div class="value" style="font-size:14px">${(res.detected_ips || []).map(escapeHtml).join(', ') || '-'}</div></div>
         </div>
-        <div style="font-size:12px;color:#888;margin-bottom:4px">目标: ${res.target_url}</div>
-        <details><summary style="cursor:pointer;color:#7c8aff;font-size:13px">查看返回内容（前500字符）</summary>
-          <pre style="margin-top:8px;max-height:300px;overflow:auto">${(res.content || '').substring(0, 500).replace(/</g, '&lt;')}</pre>
+        <div style="font-size:12px;color:#888;margin-bottom:8px">目标 URL: ${escapeHtml(res.target_url)}</div>
+        <div class="section-title">网页预览（iframe）</div>
+        <iframe class="proxy-result" sandbox="allow-same-origin" srcdoc="${srcDoc}"></iframe>
+        <details style="margin-top:12px"><summary style="cursor:pointer;color:#7c8aff;font-size:13px">查看纯文本（前 5000 字符）</summary>
+          <pre style="margin-top:8px;max-height:300px;overflow:auto;color:#aaa;background:#0f1117;padding:10px;border-radius:4px">${escapeHtml(content.substring(0, 5000))}</pre>
         </details>`;
     } else {
-      resultDiv.innerHTML = `<div style="color:#d55b5b">${res.msg || '测试失败'}</div>`;
+      resultDiv.innerHTML = `<div style="color:#d55b5b">${escapeHtml(res.msg) || '测试失败'}</div>`;
     }
   } catch(e) {
-    resultDiv.innerHTML = `<div style="color:#d55b5b">请求失败: ${e}</div>`;
+    resultDiv.innerHTML = `<div style="color:#d55b5b">请求失败: ${escapeHtml(e)}</div>`;
   } finally {
     btn.disabled = false;
-    btn.textContent = '测试代理';
+    btn.textContent = '开始测试';
   }
 }
 
@@ -449,13 +567,11 @@ async function runProxyTest() {
 async function loadActivity() {
   const d = await fetchJSON('/api/dashboard/activity/');
 
-  // AI search log
   const logs = d.ai_search_log || [];
   document.getElementById('aiLogTable').innerHTML = logs.length
-    ? logs.map(l => `<tr><td>${l.time || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
+    ? logs.map(l => `<tr><td>${escapeHtml(l.time) || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
     : '<tr><td colspan="4" style="text-align:center;color:#666">暂无 AI 搜索记录</td></tr>';
 
-  // Daily chart
   const daily = (d.daily_counts || []).reverse();
   destroyChart('chartDaily');
   charts.chartDaily = new Chart(document.getElementById('chartDaily'), {
@@ -471,6 +587,7 @@ async function loadActivity() {
 async function loadAIConfig() {
   try {
     const cfg = await fetchJSON('/api/ai/config/');
+
     document.getElementById('cfgBaseUrl').value = cfg.api_base_url || '';
     document.getElementById('cfgApiKey').value = cfg.api_key_masked || '';
     document.getElementById('cfgModel').value = cfg.model || '';
@@ -478,23 +595,38 @@ async function loadAIConfig() {
     document.getElementById('cfgMaxSources').value = cfg.max_sources;
     document.getElementById('cfgApiTimeout').value = cfg.api_timeout;
     document.getElementById('cfgSearchEnabled').value = cfg.search_enabled ? 'true' : 'false';
+
+    // ENV badges
+    const envKeys = cfg.env_sourced || [];
+    const envBadge = '<span class="badge env">ENV</span>';
+    const mapping = {
+      'api_base_url': 'envLabel_api_base_url',
+      'api_key': 'envLabel_api_key',
+      'model': 'envLabel_model',
+      'search_hour': 'envLabel_search_hour',
+      'max_sources': 'envLabel_max_sources',
+      'api_timeout': 'envLabel_api_timeout',
+      'search_enabled': 'envLabel_search_enabled',
+    };
+    Object.keys(mapping).forEach(k => {
+      const el = document.getElementById(mapping[k]);
+      if (el) el.innerHTML = envKeys.indexOf(k) >= 0 ? envBadge : '';
+    });
   } catch(e) { console.error('loadAIConfig error:', e); }
 
-  // AI discovered sources
   try {
     const srcData = await fetchJSON('/api/sources/');
     const aiSrc = (srcData.sources || []).filter(s => s.type !== 'builtin');
     document.getElementById('aiSourcesTable').innerHTML = aiSrc.length
-      ? aiSrc.map(s => `<tr><td style="font-family:monospace">${s.name}</td><td style="font-size:11px;word-break:break-all">${s.url || '-'}</td><td>${s.description || '-'}</td><td>${s.contributed}</td></tr>`).join('')
+      ? aiSrc.map(s => `<tr><td style="font-family:monospace">${escapeHtml(s.name)}</td><td style="font-size:11px;word-break:break-all">${escapeHtml(s.url) || '-'}</td><td>${escapeHtml(s.description) || '-'}</td><td>${s.contributed}</td></tr>`).join('')
       : '<tr><td colspan="4" style="text-align:center;color:#666">暂无 AI 发现的源</td></tr>';
   } catch(e) {}
 
-  // AI search history in config tab
   try {
     const act = await fetchJSON('/api/dashboard/activity/');
     const logs = act.ai_search_log || [];
     document.getElementById('aiConfigLogTable').innerHTML = logs.length
-      ? logs.map(l => `<tr><td>${l.time || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
+      ? logs.map(l => `<tr><td>${escapeHtml(l.time) || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
       : '<tr><td colspan="4" style="text-align:center;color:#666">暂无记录</td></tr>';
   } catch(e) {}
 }
@@ -527,17 +659,17 @@ async function runAISearch() {
     const r = await fetch('/api/ai/search/', {method: 'POST'});
     const res = await r.json();
     if (res.code === 1) {
-      const srcList = (res.sources_added || []).map(s => '<div style="font-size:12px;color:#5bd58a;margin:2px 0">' + (s.url || s.name) + '</div>').join('');
+      const srcList = (res.sources_added || []).map(s => '<div style="font-size:12px;color:#5bd58a;margin:2px 0">' + escapeHtml(s.url || s.name) + '</div>').join('');
       resultDiv.innerHTML = `
         <div class="card" style="margin-bottom:8px"><div class="label">搜索结果</div>
-          <div class="value" style="font-size:18px">发现 ${res.proxies_found} 个代理，验证 ${res.proxies_validated} 个</div></div>
+          <div class="value" style="font-size:18px">发现 ${res.proxies_found} 个代理，待验证 ${res.proxies_to_validate} 个</div></div>
         ${srcList ? '<div style="margin-top:8px"><div class="label">新增 AI 源:</div>' + srcList + '</div>' : ''}`;
     } else {
-      resultDiv.innerHTML = '<div style="color:#d55b5b">' + (res.msg || '搜索失败') + '</div>';
+      resultDiv.innerHTML = '<div style="color:#d55b5b">' + (escapeHtml(res.msg) || '搜索失败') + '</div>';
     }
     loadAIConfig();
   } catch(e) {
-    resultDiv.innerHTML = '<div style="color:#d55b5b">请求失败: ' + e + '</div>';
+    resultDiv.innerHTML = '<div style="color:#d55b5b">请求失败: ' + escapeHtml(e) + '</div>';
   } finally {
     btn.disabled = false;
     btn.textContent = '立即执行 AI 搜索';
@@ -547,7 +679,7 @@ async function runAISearch() {
 // --- Main ---
 async function refreshAll() {
   try {
-    await Promise.all([loadSources(), loadStats(), loadProxyList(), loadActivity(), loadAIConfig()]);
+    await Promise.all([loadSources(), loadStats(), loadProxyList(), loadProxyTestList(), loadActivity(), loadAIConfig()]);
     document.getElementById('lastUpdate').textContent = '更新于 ' + new Date().toLocaleTimeString();
   } catch(e) {
     console.error('refresh error:', e);

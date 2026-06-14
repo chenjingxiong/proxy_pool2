@@ -412,6 +412,7 @@ def apiDashboardActivity():
 @app.route('/api/ai/config/', methods=['GET'])
 def apiAiConfigGet():
     """获取当前 AI 配置（API Key 脱敏）"""
+    from handler.configHandler import _get_env_sourced_keys
     _conf = ConfigHandler()
     key = _conf.aiApiKey
     masked = '****' + key[-4:] if len(key) > 4 else ('****' if key else '')
@@ -424,6 +425,7 @@ def apiAiConfigGet():
         "search_hour": _conf.aiSearchHour,
         "max_sources": _conf.aiMaxSources,
         "api_timeout": _conf.aiApiTimeout,
+        "env_sourced": _get_env_sourced_keys(),
     }
 
 
@@ -489,6 +491,7 @@ def apiProxiesList():
     page = request.args.get("page", 1, type=int)
     page_size = request.args.get("size", 50, type=int)
     sort_by = request.args.get("sort", "speed")
+    sort_order = request.args.get("sort_order", "asc")
     https_filter = request.args.get("https", "")
 
     # 过滤
@@ -498,14 +501,15 @@ def apiProxiesList():
         proxies = [p for p in proxies if not p.https]
 
     # 排序
+    reverse = (sort_order == "desc")
     if sort_by == "speed":
-        proxies.sort(key=lambda p: p.speed if p.speed and p.speed > 0 else 999, reverse=False)
+        proxies.sort(key=lambda p: p.speed if p.speed and p.speed > 0 else 999, reverse=reverse)
     elif sort_by == "check_count":
-        proxies.sort(key=lambda p: p.check_count or 0, reverse=True)
+        proxies.sort(key=lambda p: p.check_count or 0, reverse=reverse)
     elif sort_by == "use_count":
-        proxies.sort(key=lambda p: p.use_count or 0, reverse=True)
+        proxies.sort(key=lambda p: p.use_count or 0, reverse=reverse)
     else:
-        proxies.sort(key=lambda p: p.last_time or "", reverse=True)
+        proxies.sort(key=lambda p: p.last_time or "", reverse=reverse)
 
     total = len(proxies)
     start = (page - 1) * page_size
@@ -541,8 +545,9 @@ def apiProxyTest():
             "http": f"http://{proxy_str}",
             "https": f"http://{proxy_str}",
         }
+        # connect timeout 5s, read timeout 10s — 避免阻塞 gunicorn worker 过久
         start = _time.time()
-        resp = _req.get(target_url, proxies=proxies, timeout=15,
+        resp = _req.get(target_url, proxies=proxies, timeout=(5, 10),
                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
                         verify=False, allow_redirects=True)
         elapsed = round(_time.time() - start, 2)
@@ -552,19 +557,29 @@ def apiProxyTest():
         ip_matches = _re.findall(r'(?:\d{1,3}\.){3}\d{1,3}', resp.text)
         detected_ips = list(set(ip_matches))[:5]
 
+        # 限制返回内容大小，避免大响应阻塞网络传输
+        content = resp.text[:200000]
+
         return {
             "code": 1,
             "proxy_used": proxy_str,
             "target_url": target_url,
             "status_code": resp.status_code,
             "elapsed": elapsed,
-            "content": resp.text[:50000],
+            "content": content,
             "detected_ips": detected_ips,
         }
     except _req.Timeout:
         return {"code": 0, "msg": f"代理 {proxy_str} 连接超时"}
+    except _req.ConnectionError:
+        return {"code": 0, "msg": f"代理 {proxy_str} 连接被拒绝或断开"}
+    except _req.ChunkedEncodingError:
+        return {"code": 0, "msg": f"代理 {proxy_str} 传输中断（连接被意外关闭）"}
     except Exception as e:
-        return {"code": 0, "msg": f"请求失败: {str(e)}"}
+        err_msg = str(e)
+        if 'closed unexpectedly' in err_msg.lower() or 'connection aborted' in err_msg.lower():
+            return {"code": 0, "msg": f"代理 {proxy_str} 连接意外关闭"}
+        return {"code": 0, "msg": f"请求失败: {err_msg}"}
 
 
 def runFlask():
@@ -591,8 +606,11 @@ def runFlask():
 
         _options = {
             'bind': '%s:%s' % (conf.serverHost, conf.serverPort),
-            'workers': 4,
-            'timeout': 300,
+            'workers': 6,
+            'timeout': 120,
+            'graceful_timeout': 30,
+            'max_requests': 1000,
+            'max_requests_jitter': 50,
             'accesslog': '-',  # log to stdout
             'access_log_format': '%(h)s %(l)s %(t)s "%(r)s" %(s)s "%(a)s"'
         }
