@@ -221,11 +221,20 @@ def exportProxies():
 
 @app.route('/refresh_pool/')
 def refreshPool():
-    """ 手动触发代理池刷新 """
+    """ 手动触发代理池刷新（异步执行，避免阻塞 gunicorn worker）"""
+    import threading
     try:
-        refresh_handler = RefreshHandler()
-        refresh_handler.refresh()
-        return {"code": 1, "msg": "refresh triggered"}
+        def _bg_refresh():
+            try:
+                refresh_handler = RefreshHandler()
+                refresh_handler.refresh()
+            except Exception as e:
+                from handler.logHandler import LogHandler
+                LogHandler("refresh").error("Manual refresh failed: {}".format(e))
+
+        thread = threading.Thread(target=_bg_refresh, daemon=True)
+        thread.start()
+        return {"code": 1, "msg": "refresh triggered in background"}
     except Exception as e:
         return {"code": 0, "msg": str(e)}
 
