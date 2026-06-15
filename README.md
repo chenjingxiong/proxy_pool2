@@ -18,7 +18,7 @@ ProxyPool 爬虫代理IP池
 
 ### ProxyPool
 
-爬虫代理IP池项目,主要功能为定时采集网上发布的免费代理验证入库，定时验证入库的代理保证代理的可用性，提供API和CLI两种使用方式。同时你也可以扩展代理源以增加代理池IP的质量和数量。
+爬虫代理IP池项目,主要功能为定时采集网上发布的免费代理验证入库，定时验证入库的代理保证代理的可用性，提供API和CLI两种使用方式，同时提供**虚拟代理服务器**让外部应用无需改代码即可无感使用代理池。你也可以扩展代理源以增加代理池IP的质量和数量。
 
 * 文档: [document](https://proxy-pool.readthedocs.io/zh/latest/) [![Documentation Status](https://readthedocs.org/projects/proxy-pool/badge/?version=latest)](https://proxy-pool.readthedocs.io/zh/latest/?badge=latest)
 
@@ -112,6 +112,60 @@ docker run --env DB_CONN=redis://:password@ip:port/0 -p 5010:5010 jhao104/proxy_
 docker-compose up -d
 ```
 
+`docker-compose.yml` 会启动 4 个容器：
+
+| 服务 | 容器名 | 端口 | 说明 |
+| --- | --- | --- | --- |
+| redis | proxy_pool_redis | 6380 | 代理存储 |
+| app | proxy_pool_app | 5010 | Web API + Dashboard |
+| scheduler | proxy_pool_scheduler | — | 定时抓取 + 验证 |
+| proxy_server | proxy_pool_server | **5011** | **虚拟代理服务器（新功能）** |
+
+### 虚拟代理服务器（Virtual Proxy Server）
+
+外部应用将代理池当作**单个** HTTP/HTTPS 代理使用，内部自动从池中随机挑选可用代理转发流量，**无需改业务代码**。
+
+* 代码: [`proxyServer/virtualProxy.py`](proxyServer/virtualProxy.py)
+* 默认端口: `5011`（通过环境变量 `VIRTUAL_PROXY_PORT` 配置）
+
+##### 工作机制
+
+1. 外部应用将 `http://<server>:5011` 设为 HTTP/HTTPS 代理
+2. HTTP 请求直接透传到上游代理（携带绝对 URL）
+3. HTTPS 请求通过 `CONNECT` 隧道穿透上游代理
+4. 单次请求代理失败时自动重试换代理（默认 3 次）
+5. 成功转发时累加代理的 `use_count`
+
+##### 使用示例
+
+```bash
+# curl
+curl -x http://192.168.9.8:5011 https://api.ipify.org -k
+curl -x http://192.168.9.8:5011 http://myip.ipip.net
+
+# Python requests
+import requests
+proxies = {
+    "http":  "http://192.168.9.8:5011",
+    "https": "http://192.168.9.8:5011",
+}
+r = requests.get("https://www.baidu.com", proxies=proxies, verify=False)
+```
+
+```bash
+# 全局环境变量（一次性，影响所有命令行工具）
+export http_proxy=http://192.168.9.8:5011
+export https_proxy=http://192.168.9.8:5011
+```
+
+##### 可选环境变量
+
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `VIRTUAL_PROXY_HOST` | `0.0.0.0` | 监听地址 |
+| `VIRTUAL_PROXY_PORT` | `5011` | 监听端口 |
+| `VIRTUAL_PROXY_RETRIES` | `3` | 单请求代理失败重试次数 |
+
 ### 使用
 
 * Api
@@ -126,6 +180,20 @@ docker-compose up -d
 | /all | GET | 获取所有代理 |可选参数: `?type=https` 过滤支持https的代理|
 | /count | GET | 查看代理数量 |None|
 | /delete | GET | 删除代理  |`?proxy=host:ip`|
+
+
+* 代理验证
+
+验证器通过 GET 访问真实网站并校验响应内容，确保代理可真实传输网页内容（而非仅返回状态码）：
+
+| 协议 | 验证目标 | 内容校验规则 |
+| --- | --- | --- |
+| HTTP | `http://www.baidu.com` | 响应含「百度」或「baidu」 |
+| HTTP | `http://myip.ipip.net` | 响应含 IP 地址 + 「来自于」或「IP」 |
+| HTTPS | `https://www.baidu.com` | 响应含「百度」或「baidu」 |
+| HTTPS | `https://api.ipify.org` | 响应体整行为 IP 地址 |
+
+任一目标通过即视为该协议可用（OR 逻辑）。Cloudflare 拦截页、空响应、错误页均会被否决。
 
 
 * 爬虫使用
