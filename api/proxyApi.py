@@ -533,6 +533,66 @@ def apiProxiesList():
     }
 
 
+@app.route('/api/audit/logs/')
+def apiAuditLogs():
+    """查询虚拟代理服务器审计日志（分页+过滤+搜索）"""
+    import os as _os
+    page = max(1, int(request.args.get('page', 1)))
+    size = min(200, max(1, int(request.args.get('size', 50))))
+    success_filter = (request.args.get('success', '') or '').lower()
+    keyword = (request.args.get('q', '') or '').strip()
+
+    log_file = _os.getenv('VIRTUAL_PROXY_AUDIT_FILE', 'logs/virtual_proxy_audit.log')
+    if not _os.path.isabs(log_file):
+        log_file = _os.path.join(_os.getcwd(), log_file)
+
+    entries = []
+    if _os.path.isfile(log_file):
+        try:
+            with open(log_file, 'r', encoding='utf-8') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entries.append(_json.loads(line))
+                    except _json.JSONDecodeError:
+                        continue
+        except Exception:
+            pass
+
+    if success_filter == 'true':
+        entries = [e for e in entries if e.get('success')]
+    elif success_filter == 'false':
+        entries = [e for e in entries if not e.get('success')]
+    if keyword:
+        kw = keyword.lower()
+        entries = [e for e in entries if kw in _json.dumps(e, ensure_ascii=False).lower()]
+
+    entries.reverse()  # 最新在前
+
+    total = len(entries)
+    start = (page - 1) * size
+    end = start + size
+    page_items = entries[start:end]
+
+    file_size = 0
+    try:
+        file_size = _os.path.getsize(log_file) if _os.path.isfile(log_file) else 0
+    except Exception:
+        pass
+
+    return {
+        "total": total,
+        "page": page,
+        "page_size": size,
+        "logs": page_items,
+        "file": log_file,
+        "file_size": file_size,
+        "file_size_kb": round(file_size / 1024, 1),
+    }
+
+
 @app.route('/api/proxy/test/', methods=['POST'])
 def apiProxyTest():
     """通过指定代理获取目标URL内容"""

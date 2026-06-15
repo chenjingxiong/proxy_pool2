@@ -26,8 +26,10 @@ services:
       - .env
     environment:
       - DB_CONN=redis://:pwd@redis:6380/0
+      - VIRTUAL_PROXY_AUDIT_FILE=/app/logs/virtual_proxy_audit.log
     volumes:
       - ./conf:/app/conf
+      - ./logs:/app/logs
     depends_on:
       redis:
         condition: service_healthy
