@@ -9,7 +9,7 @@
    Change Activity:
                    2023/03/10: 支持带用户认证的代理格式 username:password@ip:port
                    2025/04/24: 添加UA轮换、多验证URL、连接/读取超时分离
-                   2026/06/15: 严格验证 — 百度 + ipaddress.my 内容校验
+                   2026/06/15: 真实URL验证 — GET访问真实网站，任一成功即通过
 -------------------------------------------------
 """
 __author__ = 'JHao'
@@ -35,14 +35,24 @@ USER_AGENTS = [
 ]
 
 HEADER = {
-    'Accept': '*/*',
+    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
     'Connection': 'keep-alive',
     'Accept-Language': 'zh-CN,zh;q=0.8,en-US;q=0.5,en;q=0.3',
 }
 
 IP_REGEX = re.compile(r"(.*:.*@)?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}")
 
-IPADDRESS_URL = "https://ipaddress.my/zh_cn/"
+# HTTP验证目标：GET访问，任一返回200即通过
+HTTP_VALIDATE_URLS = [
+    "http://www.baidu.com",
+    "http://myip.ipip.net",
+]
+
+# HTTPS验证目标：GET访问，任一返回200即通过
+HTTPS_VALIDATE_URLS = [
+    "https://www.baidu.com",
+    "https://api.ipify.org",
+]
 
 
 def _get_random_headers():
@@ -96,58 +106,36 @@ def formatValidator(proxy):
 
 @ProxyValidator.addHttpValidator
 def httpTimeOutValidator(proxy):
-    """HTTP 严格验证：通过代理访问百度 + ipaddress.my，内容需包含代理 IP"""
+    """HTTP验证：GET访问真实网站，任一返回200即通过"""
     proxies = {"http": "http://{proxy}".format(proxy=proxy),
                "https": "http://{proxy}".format(proxy=proxy)}
     headers = _get_random_headers()
     timeout = _get_timeout()
-    proxy_ip = _extract_proxy_ip(proxy)
 
-    try:
-        r = get("http://www.baidu.com", headers=headers, proxies=proxies, timeout=timeout)
-        if r.status_code != 200:
-            return False
-    except Exception:
-        return False
-
-    try:
-        r = get(IPADDRESS_URL, headers=headers, proxies=proxies,
-                timeout=timeout, verify=False)
-        if r.status_code != 200:
-            return False
-        if proxy_ip not in r.text:
-            return False
-    except Exception:
-        return False
-
-    return True
+    for url in HTTP_VALIDATE_URLS:
+        try:
+            r = get(url, headers=headers, proxies=proxies, timeout=timeout)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            continue
+    return False
 
 
 @ProxyValidator.addHttpsValidator
 def httpsTimeOutValidator(proxy):
-    """HTTPS 严格验证：通过代理访问百度 + ipaddress.my，内容需包含代理 IP"""
+    """HTTPS验证：GET访问真实HTTPS网站，任一返回200即通过"""
     proxies = {"http": "http://{proxy}".format(proxy=proxy),
-               "https": "http://{proxy}".format(proxy=proxy)}
+               "https": "https://{proxy}".format(proxy=proxy)}
     headers = _get_random_headers()
     timeout = _get_timeout()
-    proxy_ip = _extract_proxy_ip(proxy)
 
-    try:
-        r = get("https://www.baidu.com", headers=headers, proxies=proxies,
-                timeout=timeout, verify=False)
-        if r.status_code != 200:
-            return False
-    except Exception:
-        return False
-
-    try:
-        r = get(IPADDRESS_URL, headers=headers, proxies=proxies,
-                timeout=timeout, verify=False)
-        if r.status_code != 200:
-            return False
-        if proxy_ip not in r.text:
-            return False
-    except Exception:
-        return False
-
-    return True
+    for url in HTTPS_VALIDATE_URLS:
+        try:
+            r = get(url, headers=headers, proxies=proxies,
+                    timeout=timeout, verify=False)
+            if r.status_code == 200:
+                return True
+        except Exception:
+            continue
+    return False
