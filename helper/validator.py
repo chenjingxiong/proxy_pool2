@@ -10,6 +10,7 @@
                    2023/03/10: 支持带用户认证的代理格式 username:password@ip:port
                    2025/04/24: 添加UA轮换、多验证URL、连接/读取超时分离
                    2026/06/15: 真实URL验证 — GET访问真实网站，任一成功即通过
+                   2026/06/16: 增加内容校验 — 200 + 真实内容才视为可用
 -------------------------------------------------
 """
 __author__ = 'JHao'
@@ -41,6 +42,13 @@ HEADER = {
 }
 
 IP_REGEX = re.compile(r"(.*:.*@)?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}")
+
+# IP 文本正则（用于 ipip.net / ipify.org 内容校验）
+IP_TEXT_REGEX = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
+
+# Cloudflare 拦截页特征（快速否决，避免误把挑战页当可用）
+CF_BLOCK_SIGNATURES = ("cf-browser-verification", "cf-challenge",
+                       "cdn-cgi/challenge", "attention required")
 
 # HTTP验证目标：GET访问，任一返回200即通过
 HTTP_VALIDATE_URLS = [
@@ -77,6 +85,25 @@ def _extract_proxy_ip(proxy):
     return proxy.split('@')[-1].split(':')[0]
 
 
+def _is_content_valid(url, response):
+    """校验响应体是否为真实目标内容（而非空页/拦截页/错误页）"""
+    if response.status_code != 200:
+        return False
+    text = response.text or ""
+    if not text.strip():
+        return False
+    low = text.lower()
+    if any(sig in low for sig in CF_BLOCK_SIGNATURES):
+        return False
+    if "baidu.com" in url:
+        return ("百度" in text) or ("baidu" in low)
+    if "ipip.net" in url:
+        return bool(IP_TEXT_REGEX.search(text)) and ("来自于" in text or "IP" in text)
+    if "ipify.org" in url:
+        return bool(IP_TEXT_REGEX.fullmatch(text.strip()))
+    return False
+
+
 class ProxyValidator(withMetaclass(Singleton)):
     pre_validator = []
     http_validator = []
@@ -106,7 +133,7 @@ def formatValidator(proxy):
 
 @ProxyValidator.addHttpValidator
 def httpTimeOutValidator(proxy):
-    """HTTP验证：GET访问真实网站，任一返回200即通过"""
+    """HTTP验证：GET访问真实网站，任一返回200且内容真实即通过"""
     proxies = {"http": "http://{proxy}".format(proxy=proxy),
                "https": "http://{proxy}".format(proxy=proxy)}
     headers = _get_random_headers()
@@ -115,7 +142,7 @@ def httpTimeOutValidator(proxy):
     for url in HTTP_VALIDATE_URLS:
         try:
             r = get(url, headers=headers, proxies=proxies, timeout=timeout)
-            if r.status_code == 200:
+            if _is_content_valid(url, r):
                 return True
         except Exception:
             continue
@@ -124,7 +151,7 @@ def httpTimeOutValidator(proxy):
 
 @ProxyValidator.addHttpsValidator
 def httpsTimeOutValidator(proxy):
-    """HTTPS验证：GET访问真实HTTPS网站，任一返回200即通过"""
+    """HTTPS验证：GET访问真实HTTPS网站，任一返回200且内容真实即通过"""
     proxies = {"http": "http://{proxy}".format(proxy=proxy),
                "https": "https://{proxy}".format(proxy=proxy)}
     headers = _get_random_headers()
@@ -134,7 +161,7 @@ def httpsTimeOutValidator(proxy):
         try:
             r = get(url, headers=headers, proxies=proxies,
                     timeout=timeout, verify=False)
-            if r.status_code == 200:
+            if _is_content_valid(url, r):
                 return True
         except Exception:
             continue

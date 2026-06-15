@@ -32,6 +32,9 @@ HOST = "0.0.0.0"
 
 PORT = 5010
 
+# 虚拟代理服务器端口（对外暴露，外部应用设为 HTTP/HTTPS 代理即可使用整个代理池）
+VIRTUAL_PROXY_PORT = 5011
+
 # ############### database config ###################
 # db connection uri
 # example:
