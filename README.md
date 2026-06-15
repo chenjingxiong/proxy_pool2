@@ -165,6 +165,33 @@ export https_proxy=http://192.168.9.8:5011
 | `VIRTUAL_PROXY_HOST` | `0.0.0.0` | 监听地址 |
 | `VIRTUAL_PROXY_PORT` | `5011` | 监听端口 |
 | `VIRTUAL_PROXY_RETRIES` | `3` | 单请求代理失败重试次数 |
+| `VIRTUAL_PROXY_AUDIT_FILE` | `logs/virtual_proxy_audit.log` | 审计日志文件路径 |
+| `VIRTUAL_PROXY_AUDIT_SIZE_KB` | `1024` | 单个审计日志文件最大 KB，超出自动轮转 |
+| `VIRTUAL_PROXY_AUDIT_BACKUP_COUNT` | `5` | 审计日志保留的历史份数 |
+
+##### 审计日志
+
+每次外部调用自动记录，JSON Lines 格式，存储于 `logs/virtual_proxy_audit.log`（docker-compose 挂载至宿主机 `./logs/`）。
+
+日志字段：
+
+| 字段 | 说明 |
+| --- | --- |
+| `ts` | 时间 `YYYY-MM-DD HH:MM:SS` |
+| `client` | 调用方 IP:Port |
+| `method` | 请求方法（GET / CONNECT 等） |
+| `target` | 目标 URL（CONNECT 为 host:port） |
+| `proxy` | 使用的代理 IP:Port |
+| `success` | 是否成功（HTTP: 收到有效响应；CONNECT: 隧道建立） |
+| `status` | HTTP 状态码（0 = 无有效响应，200/502/403 等） |
+| `duration` | 耗时（秒） |
+| `error` | 失败原因（仅失败时有） |
+
+日志示例：
+```json
+{"ts":"2026-06-16 01:41:26","client":"192.168.9.11:54321","method":"GET","target":"http://myip.ipip.net/","proxy":"104.17.105.39:80","success":true,"status":200,"duration":0.309}
+{"ts":"2026-06-16 01:42:21","client":"192.168.9.11:54322","method":"CONNECT","target":"api.ipify.org:443","proxy":"5.10.244.140:80","success":false,"status":502,"duration":6.239,"error":"upstream HTTP/1.1 400 Bad Request"}
+```
 
 ### 使用
 

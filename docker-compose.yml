@@ -63,8 +63,12 @@ services:
       - DB_CONN=redis://:pwd@redis:6380/0
       - VIRTUAL_PROXY_HOST=0.0.0.0
       - VIRTUAL_PROXY_PORT=5011
+      - VIRTUAL_PROXY_AUDIT_FILE=/app/logs/virtual_proxy_audit.log
+      - VIRTUAL_PROXY_AUDIT_SIZE_KB=1024
+      - VIRTUAL_PROXY_AUDIT_BACKUP_COUNT=5
     volumes:
       - ./conf:/app/conf
+      - ./logs:/app/logs
     command: ["python", "-m", "proxyServer.virtualProxy"]
     ports:
       - "5011:5011"

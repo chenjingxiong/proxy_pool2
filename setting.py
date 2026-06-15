@@ -35,6 +35,11 @@ PORT = 5010
 # 虚拟代理服务器端口（对外暴露，外部应用设为 HTTP/HTTPS 代理即可使用整个代理池）
 VIRTUAL_PROXY_PORT = 5011
 
+# 虚拟代理服务器审计日志（记录每次外部调用：时间/成功失败/代理IP/状态码/目标URL）
+VIRTUAL_PROXY_AUDIT_FILE = "logs/virtual_proxy_audit.log"
+VIRTUAL_PROXY_AUDIT_SIZE_KB = 1024  # 单文件最大 KB，超出后自动轮转
+VIRTUAL_PROXY_AUDIT_BACKUP_COUNT = 5  # 保留的历史日志份数
+
 # ############### database config ###################
 # db connection uri
 # example:
