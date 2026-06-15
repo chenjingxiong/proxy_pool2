@@ -11,6 +11,8 @@
                    2025/04/24: 添加UA轮换、多验证URL、连接/读取超时分离
                    2026/06/15: 真实URL验证 — GET访问真实网站，任一成功即通过
                    2026/06/16: 增加内容校验 — 200 + 真实内容才视为可用
+                   2026/06/16: 收严验证 — 所有目标URL必须全部通过（AND 逻辑），
+                                超时或任一目标内容校验失败即视为不可用
 -------------------------------------------------
 """
 __author__ = 'JHao'
@@ -50,13 +52,13 @@ IP_TEXT_REGEX = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 CF_BLOCK_SIGNATURES = ("cf-browser-verification", "cf-challenge",
                        "cdn-cgi/challenge", "attention required")
 
-# HTTP验证目标：GET访问，任一返回200即通过
+# HTTP验证目标：GET访问，所有目标必须全部通过（AND 逻辑）
 HTTP_VALIDATE_URLS = [
     "http://www.baidu.com",
     "http://myip.ipip.net",
 ]
 
-# HTTPS验证目标：GET访问，任一返回200即通过
+# HTTPS验证目标：GET访问，所有目标必须全部通过（AND 逻辑）
 HTTPS_VALIDATE_URLS = [
     "https://www.baidu.com",
     "https://api.ipify.org",
@@ -133,7 +135,7 @@ def formatValidator(proxy):
 
 @ProxyValidator.addHttpValidator
 def httpTimeOutValidator(proxy):
-    """HTTP验证：GET访问真实网站，任一返回200且内容真实即通过"""
+    """HTTP验证：GET访问真实网站，所有目标必须全部返回200且内容真实才通过（AND 逻辑）"""
     proxies = {"http": "http://{proxy}".format(proxy=proxy),
                "https": "http://{proxy}".format(proxy=proxy)}
     headers = _get_random_headers()
@@ -142,16 +144,16 @@ def httpTimeOutValidator(proxy):
     for url in HTTP_VALIDATE_URLS:
         try:
             r = get(url, headers=headers, proxies=proxies, timeout=timeout)
-            if _is_content_valid(url, r):
-                return True
+            if not _is_content_valid(url, r):
+                return False
         except Exception:
-            continue
-    return False
+            return False
+    return True
 
 
 @ProxyValidator.addHttpsValidator
 def httpsTimeOutValidator(proxy):
-    """HTTPS验证：GET访问真实HTTPS网站，任一返回200且内容真实即通过"""
+    """HTTPS验证：GET访问真实HTTPS网站，所有目标必须全部返回200且内容真实才通过（AND 逻辑）"""
     proxies = {"http": "http://{proxy}".format(proxy=proxy),
                "https": "https://{proxy}".format(proxy=proxy)}
     headers = _get_random_headers()
@@ -161,8 +163,8 @@ def httpsTimeOutValidator(proxy):
         try:
             r = get(url, headers=headers, proxies=proxies,
                     timeout=timeout, verify=False)
-            if _is_content_valid(url, r):
-                return True
+            if not _is_content_valid(url, r):
+                return False
         except Exception:
-            continue
-    return False
+            return False
+    return True

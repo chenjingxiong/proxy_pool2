@@ -220,7 +220,7 @@ export https_proxy=http://192.168.9.8:5011
 | HTTPS | `https://www.baidu.com` | 响应含「百度」或「baidu」 |
 | HTTPS | `https://api.ipify.org` | 响应体整行为 IP 地址 |
 
-任一目标通过即视为该协议可用（OR 逻辑）。Cloudflare 拦截页、空响应、错误页均会被否决。
+**所有目标必须全部通过**才视为该协议可用（AND 逻辑）：任一目标超时、状态码非 200、返回空响应、Cloudflare 拦截页或内容不匹配，即视为不可用，不进入候选池。
 
 
 * 爬虫使用

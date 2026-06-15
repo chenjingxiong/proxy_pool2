@@ -126,8 +126,8 @@ HTTP_URL = "http://www.baidu.com"
 
 HTTPS_URL = "https://ipaddress.my/zh_cn/"
 
-# 代理验证时超时时间
-VERIFY_TIMEOUT = 10
+# 代理验证时超时时间（超时即视为不可用，不进入候选池）
+VERIFY_TIMEOUT = 8
 
 # 近PROXY_CHECK_COUNT次校验中允许的最大失败次数,超过则剔除代理
 MAX_FAIL_COUNT = 0
