@@ -593,6 +593,33 @@ def apiAuditLogs():
     }
 
 
+def _mark_proxy_failed(proxy_str, reason="test_fail"):
+    """测试失败时实时标记代理：fail_count+1, 超过阈值则删除。
+    仅处理明确的连接级失败（代理本身不可达），避免目标站点反爬误伤。"""
+    try:
+        from helper.proxy import Proxy as _Proxy
+        if not proxy_handler.exists(_Proxy(proxy=proxy_str)):
+            return {"marked": False, "reason": "not_in_pool"}
+        # 从 DB 中查找该代理的完整数据
+        proxy_obj = None
+        for p in proxy_handler.getAll():
+            if p.proxy == proxy_str:
+                proxy_obj = p
+                break
+        if not proxy_obj:
+            return {"marked": False, "reason": "not_found"}
+        proxy_obj.fail_count = (proxy_obj.fail_count or 0) + 1
+        proxy_obj.last_status = False
+        # maxFailCount=0 时，任何一次失败都立即删除
+        if proxy_obj.fail_count > proxy_handler.conf.maxFailCount:
+            proxy_handler.delete(proxy_obj)
+            return {"marked": True, "action": "deleted", "fail_count": proxy_obj.fail_count}
+        proxy_handler.put(proxy_obj)
+        return {"marked": True, "action": "decremented", "fail_count": proxy_obj.fail_count}
+    except Exception as e:
+        return {"marked": False, "reason": f"error: {e}"}
+
+
 @app.route('/api/proxy/test/', methods=['POST'])
 def apiProxyTest():
     """通过指定代理获取目标URL内容"""
@@ -639,15 +666,23 @@ def apiProxyTest():
             "detected_ips": detected_ips,
         }
     except _req.Timeout:
-        return {"code": 0, "msg": f"代理 {proxy_str} 连接超时"}
+        mark = _mark_proxy_failed(proxy_str, "timeout")
+        action = "已从池中删除" if mark.get("action") == "deleted" else f"已标记失败（fail={mark.get('fail_count', '?')}）"
+        return {"code": 0, "msg": f"代理 {proxy_str} 连接超时", "pool_action": action}
     except _req.ConnectionError:
-        return {"code": 0, "msg": f"代理 {proxy_str} 连接被拒绝或断开"}
+        mark = _mark_proxy_failed(proxy_str, "connection_error")
+        action = "已从池中删除" if mark.get("action") == "deleted" else f"已标记失败（fail={mark.get('fail_count', '?')}）"
+        return {"code": 0, "msg": f"代理 {proxy_str} 连接被拒绝或断开", "pool_action": action}
     except _req.ChunkedEncodingError:
-        return {"code": 0, "msg": f"代理 {proxy_str} 传输中断（连接被意外关闭）"}
+        mark = _mark_proxy_failed(proxy_str, "chunked_encoding")
+        action = "已从池中删除" if mark.get("action") == "deleted" else f"已标记失败（fail={mark.get('fail_count', '?')}）"
+        return {"code": 0, "msg": f"代理 {proxy_str} 传输中断（连接被意外关闭）", "pool_action": action}
     except Exception as e:
         err_msg = str(e)
         if 'closed unexpectedly' in err_msg.lower() or 'connection aborted' in err_msg.lower():
-            return {"code": 0, "msg": f"代理 {proxy_str} 连接意外关闭"}
+            mark = _mark_proxy_failed(proxy_str, "aborted")
+            action = "已从池中删除" if mark.get("action") == "deleted" else f"已标记失败（fail={mark.get('fail_count', '?')}）"
+            return {"code": 0, "msg": f"代理 {proxy_str} 连接意外关闭", "pool_action": action}
         return {"code": 0, "msg": f"请求失败: {err_msg}"}
 
 
