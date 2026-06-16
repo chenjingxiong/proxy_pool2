@@ -27,6 +27,7 @@ services:
     environment:
       - TZ=CST-8
       - DB_CONN=redis://:pwd@redis:6380/0
+      - PROXY_DOMAIN=https://proxypool.uecast.cn
       - VIRTUAL_PROXY_AUDIT_FILE=/app/logs/virtual_proxy_audit.log
     volumes:
       - ./conf:/app/conf

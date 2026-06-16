@@ -214,6 +214,22 @@ class ConfigHandler(withMetaclass(Singleton)):
         return bool(os.getenv("PROXY_REGION", setting.PROXY_REGION))
 
     @LazyProperty
+    def proxyDomain(self):
+        return os.getenv("PROXY_DOMAIN", "").rstrip("/").strip()
+
+    @LazyProperty
+    def apiBaseUrl(self):
+        if self.proxyDomain:
+            return self.proxyDomain
+        return "http://{host}:{port}".format(host=self.serverHost, port=self.serverPort)
+
+    @LazyProperty
+    def virtualProxyUrl(self):
+        if self.proxyDomain:
+            return self.proxyDomain.replace("https://", "http://").replace("http://", "")
+        return "{host}:{port}".format(host=self.serverHost, port=5011)
+
+    @LazyProperty
     def timezone(self):
         return os.getenv("TIMEZONE", setting.TIMEZONE)
 

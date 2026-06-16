@@ -58,7 +58,7 @@ api_list = [
 
 @app.route('/')
 def index():
-    return render_template('dashboard.html')
+    return render_template('dashboard.html', api_base_url=conf.apiBaseUrl, virtual_proxy_url=conf.virtualProxyUrl)
 
 
 @app.route('/get/')
