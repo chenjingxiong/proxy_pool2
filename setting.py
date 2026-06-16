@@ -32,8 +32,12 @@ HOST = "0.0.0.0"
 
 PORT = 5010
 
-# 虚拟代理服务器端口（对外暴露，外部应用设为 HTTP/HTTPS 代理即可使用整个代理池）
-VIRTUAL_PROXY_PORT = 5011
+# 虚拟代理服务器对外端口（与 Web API 共用，根据请求特征自动分流：
+#   CONNECT / 绝对URL → 代理转发；相对路径 → 反向代理到 Flask）
+VIRTUAL_PROXY_PORT = 5010
+
+# Flask/gunicorn 内部监听端口（仅在 Docker 内网暴露，不对外）
+FLASK_INTERNAL_PORT = 5010
 
 # 虚拟代理服务器审计日志（记录每次外部调用：时间/成功失败/代理IP/状态码/目标URL）
 VIRTUAL_PROXY_AUDIT_FILE = "logs/virtual_proxy_audit.log"

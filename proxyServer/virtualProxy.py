@@ -2,10 +2,10 @@
 """
 -------------------------------------------------
    File Name：     virtualProxy
-   Description :   虚拟代理服务器 — 对外暴露为单个 HTTP/HTTPS 代理，
-                   内部自动从代理池挑选可用代理转发流量，
-                   让外部应用无感使用代理池。
-                   每次外部调用记录审计日志（成功/失败、代理IP、状态码、目标URL等）。
+   Description :   统一入口服务器 — 对外暴露单个端口，根据请求特征自动分流：
+                   CONNECT / 绝对URL → 代理转发（虚拟代理服务器）
+                   相对路径 → 反向代理到 Flask/gunicorn（Web API + Dashboard）
+                   每次代理调用记录审计日志（成功/失败、代理IP、状态码、目标URL等）。
    date：          2026/06/16
 -------------------------------------------------
 """
@@ -44,9 +44,11 @@ AUDIT_BACKUP_COUNT = int(os.getenv("VIRTUAL_PROXY_AUDIT_BACKUP_COUNT", "5"))
 
 
 class VirtualProxyServer:
-    def __init__(self, host="0.0.0.0", port=5011):
+    def __init__(self, host="0.0.0.0", port=5010, flask_host="127.0.0.1", flask_port=5010):
         self.host = host
         self.port = port
+        self.flask_host = flask_host
+        self.flask_port = flask_port
         self.proxy_handler = ProxyHandler()
         self.audit = AuditLogger(
             file_path=AUDIT_FILE,
@@ -73,8 +75,8 @@ class VirtualProxyServer:
         server = await asyncio.start_server(self._handle_client, self.host, self.port)
         addrs = ", ".join(str(s.getsockname()) for s in server.sockets)
         log.info(
-            "VirtualProxyServer listening on %s | audit=%s size=%dKB",
-            addrs, AUDIT_FILE, AUDIT_SIZE_KB,
+            "UnifiedServer listening on %s → Flask %s:%d | audit=%s size=%dKB",
+            addrs, self.flask_host, self.flask_port, AUDIT_FILE, AUDIT_SIZE_KB,
         )
         async with server:
             await server.serve_forever()
@@ -101,8 +103,10 @@ class VirtualProxyServer:
 
         if method == "CONNECT":
             await self._handle_connect(reader, writer, target, client_str, head)
-        else:
+        elif target.startswith("http://") or target.startswith("https://"):
             await self._handle_http(reader, writer, method, target, client_str, head)
+        else:
+            await self._handle_web(reader, writer, method, target, client_str, head)
 
     async def _handle_connect(self, reader, writer, target, client_str, head):
         start = time.time()
@@ -202,6 +206,27 @@ class VirtualProxyServer:
                        False, 502, duration, error=last_error)
         await self._write_response(writer, 502, b"Bad Gateway")
 
+    async def _handle_web(self, reader, writer, method, target, client_str, head):
+        """相对路径请求 → 反向代理到内部 Flask/gunicorn"""
+        up_r, up_w = None, None
+        try:
+            up_r, up_w = await asyncio.wait_for(
+                asyncio.open_connection(self.flask_host, self.flask_port), timeout=5
+            )
+            up_w.write(head)
+            await up_w.drain()
+            await self._pipe(reader, writer, up_r, up_w, capture_status=False)
+        except Exception as exc:
+            log.warning("WEB %s %s → %s:%d err: %s", method, target[:60],
+                        self.flask_host, self.flask_port, exc)
+            await self._write_response(writer, 502, b"Bad Gateway")
+        finally:
+            if up_w:
+                try:
+                    up_w.close()
+                except Exception:
+                    pass
+
     async def _pipe(self, c_r, c_w, u_r, u_w, capture_status=False):
         """双向字节流转发。capture_status=True 时解析首个上游响应行返回 HTTP 状态码"""
         status_holder = {"status": 0}
@@ -271,8 +296,10 @@ class VirtualProxyServer:
 
 def main():
     host = os.getenv("VIRTUAL_PROXY_HOST", "0.0.0.0")
-    port = int(os.getenv("VIRTUAL_PROXY_PORT", "5011"))
-    server = VirtualProxyServer(host, port)
+    port = int(os.getenv("VIRTUAL_PROXY_PORT", "5010"))
+    flask_host = os.getenv("FLASK_HOST", "127.0.0.1")
+    flask_port = int(os.getenv("FLASK_PORT", "5010"))
+    server = VirtualProxyServer(host, port, flask_host, flask_port)
     try:
         asyncio.run(server.start())
     except KeyboardInterrupt:

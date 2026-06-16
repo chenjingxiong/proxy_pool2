@@ -227,7 +227,7 @@ class ConfigHandler(withMetaclass(Singleton)):
     def virtualProxyUrl(self):
         if self.proxyDomain:
             return self.proxyDomain.replace("https://", "http://").replace("http://", "")
-        return "{host}:{port}".format(host=self.serverHost, port=5011)
+        return "{host}:{port}".format(host=self.serverHost, port=5010)
 
     @LazyProperty
     def timezone(self):

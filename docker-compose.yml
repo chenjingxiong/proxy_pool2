@@ -20,8 +20,6 @@ services:
   app:
     build: .
     container_name: proxy_pool_app
-    ports:
-      - "5010:5010"
     env_file:
       - .env
     environment:
@@ -29,6 +27,8 @@ services:
       - DB_CONN=redis://:pwd@redis:6380/0
       - PROXY_DOMAIN=https://proxypool.uecast.cn
       - VIRTUAL_PROXY_AUDIT_FILE=/app/logs/virtual_proxy_audit.log
+    expose:
+      - "5010"
     volumes:
       - ./conf:/app/conf
       - ./logs:/app/logs
@@ -68,7 +68,9 @@ services:
       - TZ=CST-8
       - DB_CONN=redis://:pwd@redis:6380/0
       - VIRTUAL_PROXY_HOST=0.0.0.0
-      - VIRTUAL_PROXY_PORT=5011
+      - VIRTUAL_PROXY_PORT=5010
+      - FLASK_HOST=app
+      - FLASK_PORT=5010
       - VIRTUAL_PROXY_AUDIT_FILE=/app/logs/virtual_proxy_audit.log
       - VIRTUAL_PROXY_AUDIT_SIZE_KB=1024
       - VIRTUAL_PROXY_AUDIT_BACKUP_COUNT=5
@@ -77,9 +79,11 @@ services:
       - ./logs:/app/logs
     command: ["python", "-m", "proxyServer.virtualProxy"]
     ports:
-      - "5011:5011"
+      - "5010:5010"
     depends_on:
       redis:
+        condition: service_healthy
+      app:
         condition: service_healthy
     restart: unless-stopped
 
