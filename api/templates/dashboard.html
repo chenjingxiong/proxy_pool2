@@ -2,88 +2,244 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f1117" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#f6f7fb" media="(prefers-color-scheme: light)">
 <title>Proxy Pool Dashboard</title>
+<script>
+// 防止主题切换FOUC：在渲染前确定主题
+(function(){
+  try {
+    const saved = localStorage.getItem('pp-theme');
+    const theme = saved || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+    document.documentElement.dataset.theme = theme;
+  } catch(e) {
+    document.documentElement.dataset.theme = 'dark';
+  }
+})();
+</script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#0f1117;color:#e0e0e0;min-height:100vh}
-.header{background:#1a1d29;border-bottom:1px solid #2a2d3a;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
-.header h1{font-size:20px;color:#7c8aff;letter-spacing:1px}
-.header .status{font-size:13px;color:#888}
-.tabs{display:flex;background:#1a1d29;border-bottom:1px solid #2a2d3a;padding:0 24px;flex-wrap:wrap}
-.tab{padding:12px 20px;cursor:pointer;color:#888;font-size:14px;border-bottom:2px solid transparent;transition:all .2s}
-.tab:hover{color:#bbb}
-.tab.active{color:#7c8aff;border-bottom-color:#7c8aff}
-.content{padding:24px;max-width:1400px;margin:0 auto}
+:root{
+  color-scheme:dark;
+  --bg:#0f1117; --surface:#1a1d29; --surface-2:#1e2133; --surface-3:#22253a;
+  --border:#2a2d3a; --border-strong:#3a3d4a;
+  --text:#e6e8ef; --text-muted:#9aa0b0; --text-subtle:#6f7689;
+  --accent:#6e7bff; --accent-hover:#5d6ae8; --accent-soft:rgba(110,123,255,0.14);
+  --success:#4ade80; --success-bg:#14321f;
+  --danger:#f87171; --danger-bg:#321414;
+  --info:#60a5fa; --info-bg:#142640;
+  --warning:#fbbf24; --warning-bg:#3a2a0e;
+  --radius:10px; --radius-sm:6px;
+  --shadow:0 1px 2px rgba(0,0,0,0.3), 0 4px 12px rgba(0,0,0,0.2);
+  --header-h:56px; --content-pad:24px; --tab-h:44px;
+}
+[data-theme="light"]{
+  color-scheme:light;
+  --bg:#f6f7fb; --surface:#ffffff; --surface-2:#f0f2f8; --surface-3:#e8ebf3;
+  --border:#e2e6ef; --border-strong:#cbd2e0;
+  --text:#1a1d29; --text-muted:#5a6275; --text-subtle:#8a92a6;
+  --accent:#4f5bd5; --accent-hover:#3f49b8; --accent-soft:rgba(79,91,213,0.10);
+  --success:#15803d; --success-bg:#dcfce7;
+  --danger:#b91c1c; --danger-bg:#fee2e2;
+  --info:#1d4ed8; --info-bg:#dbeafe;
+  --warning:#b45309; --warning-bg:#fef3c7;
+  --shadow:0 1px 2px rgba(15,17,23,0.06), 0 4px 12px rgba(15,17,23,0.05);
+}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  background:var(--bg); color:var(--text); min-height:100vh;
+  -webkit-tap-highlight-color:transparent;
+  line-height:1.5;
+}
+.header{
+  background:var(--surface); border-bottom:1px solid var(--border);
+  padding:max(16px, env(safe-area-inset-top)) max(var(--content-pad), env(safe-area-inset-right)) 16px max(var(--content-pad), env(safe-area-inset-left));
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+}
+.header h1{font-size:20px;color:var(--accent);letter-spacing:1px}
+.header .status{font-size:13px;color:var(--text-muted)}
+.theme-toggle{
+  background:var(--surface-2); border:1px solid var(--border); color:var(--text);
+  width:36px; height:36px; border-radius:var(--radius-sm); cursor:pointer;
+  font-size:18px; display:inline-flex; align-items:center; justify-content:center;
+  touch-action:manipulation; font-family:inherit;
+  transition:background-color .15s ease, border-color .15s ease;
+}
+.theme-toggle:hover{background:var(--surface-3); border-color:var(--border-strong)}
+.theme-toggle:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+
+.tabs{
+  display:flex; background:var(--surface); border-bottom:1px solid var(--border);
+  padding:0 max(var(--content-pad), env(safe-area-inset-left));
+  overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none;
+  position:sticky; top:0; z-index:5; gap:4px;
+}
+.tabs::-webkit-scrollbar{display:none}
+.tab{
+  padding:12px 16px; cursor:pointer; color:var(--text-muted); font-size:14px;
+  border:none; border-bottom:2px solid transparent; background:transparent;
+  white-space:nowrap; min-height:var(--tab-h); display:inline-flex; align-items:center;
+  touch-action:manipulation; font-family:inherit;
+  transition:color .15s ease, border-color .15s ease;
+}
+.tab:hover{color:var(--text)}
+.tab.active{color:var(--accent); border-bottom-color:var(--accent)}
+.tab:focus-visible{outline:2px solid var(--accent); outline-offset:-2px}
+
+.content{
+  padding:var(--content-pad);
+  padding-left:max(var(--content-pad), env(safe-area-inset-left));
+  padding-right:max(var(--content-pad), env(safe-area-inset-right));
+  padding-bottom:max(var(--content-pad), env(safe-area-inset-bottom));
+  max-width:1400px; margin:0 auto;
+}
 .panel{display:none}
 .panel.active{display:block}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
-.card{background:#1a1d29;border:1px solid #2a2d3a;border-radius:8px;padding:16px}
-.card .label{font-size:12px;color:#888;margin-bottom:4px}
-.card .value{font-size:28px;font-weight:700;color:#7c8aff}
-.card .sub{font-size:12px;color:#666;margin-top:4px}
-.charts{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:16px;margin-bottom:24px}
-.chart-box{background:#1a1d29;border:1px solid #2a2d3a;border-radius:8px;padding:16px}
-.chart-box h3{font-size:14px;color:#aaa;margin-bottom:12px}
-table{width:100%;border-collapse:collapse;background:#1a1d29;border-radius:8px;overflow:hidden}
-th{background:#22253a;color:#888;font-size:12px;padding:10px 12px;text-align:left;position:sticky;top:0}
-td{padding:8px 12px;font-size:13px;border-top:1px solid #2a2d3a}
-tr:hover td{background:#1e2133}
+
+.cards{display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:16px; margin-bottom:24px}
+.card{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow)}
+.card .label{font-size:12px; color:var(--text-muted); margin-bottom:4px}
+.card .value{font-size:28px; font-weight:700; color:var(--accent); font-variant-numeric:tabular-nums}
+.card .sub{font-size:12px; color:var(--text-subtle); margin-top:4px}
+
+.charts{display:grid; grid-template-columns:repeat(auto-fit, minmax(min(100%, 400px),1fr)); gap:16px; margin-bottom:24px}
+.chart-box{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; box-shadow:var(--shadow)}
+.chart-box h3{font-size:14px; color:var(--text-muted); margin-bottom:12px}
+
+table{width:100%; border-collapse:collapse; background:var(--surface); border-radius:var(--radius); overflow:hidden}
+th{background:var(--surface-3); color:var(--text-muted); font-size:12px; padding:10px 12px; text-align:left; position:sticky; top:0; z-index:2; font-weight:600}
+td{padding:8px 12px; font-size:13px; border-top:1px solid var(--border); color:var(--text); vertical-align:middle}
+tr:hover td{background:var(--surface-2)}
+
 .form-group{margin-bottom:14px}
-.form-group label{display:block;font-size:12px;color:#888;margin-bottom:4px}
-.form-group input,.form-group select{padding:8px 12px;background:#0f1117;border:1px solid #2a2d3a;border-radius:4px;color:#e0e0e0;font-size:13px;width:100%;max-width:400px}
-.form-group input:focus{border-color:#7c8aff;outline:none}
-.form-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:16px}
-.btn{padding:8px 20px;border:none;border-radius:4px;font-size:13px;cursor:pointer;transition:all .2s}
-.btn-primary{background:#7c8aff;color:#fff}
-.btn-primary:hover{background:#6a78e0}
-.btn-success{background:#2d9147;color:#fff}
-.btn-success:hover{background:#257a3b}
-.btn-danger{background:#c0392b;color:#fff}
-.badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-.badge.builtin{background:#1a3a5c;color:#5b9bd5}
-.badge.url_text{background:#1a3c2a;color:#5bd58a}
-.badge.dynamic{background:#3c2a1a;color:#d58a5b}
-.badge.on{background:#1a3c2a;color:#5bd58a}
-.badge.off{background:#3c1a1a;color:#d55b5b}
-.badge.env{background:#1a3a5c;color:#5b9bd5;margin-left:6px}
-.api-item{background:#1a1d29;border:1px solid #2a2d3a;border-radius:8px;padding:16px;margin-bottom:12px}
-.api-item h3{color:#7c8aff;font-size:14px;margin-bottom:8px}
-.api-item .url{color:#5bd58a;font-family:monospace;font-size:13px;margin-bottom:6px}
-.api-item .desc{color:#888;font-size:13px;margin-bottom:8px}
-.api-item pre{background:#0f1117;border-radius:4px;padding:10px;font-size:12px;color:#aaa;overflow-x:auto}
-.table-wrap{max-height:600px;overflow-y:auto;border-radius:8px}
-.loading{text-align:center;padding:40px;color:#666}
-.btn-sm{padding:4px 12px;font-size:12px}
-.sort-btn{padding:4px 12px;font-size:12px;background:#2a2d3a;color:#aaa;border:1px solid #3a3d4a;border-radius:4px;cursor:pointer}
-.sort-btn:hover{color:#e0e0e0}
-.sort-btn.active{background:#7c8aff;color:#fff;border-color:#7c8aff}
-.selected-row td{background:#1a2a4a !important}
-iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radius:8px;background:#fff}
-.section-title{font-size:14px;color:#aaa;margin:16px 0 8px}
+.form-group label{display:block; font-size:12px; color:var(--text-muted); margin-bottom:4px}
+.form-group input,.form-group select{
+  padding:9px 12px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm);
+  color:var(--text); font-size:13px; width:100%; max-width:400px; font-family:inherit;
+  transition:border-color .15s ease, box-shadow .15s ease;
+}
+.form-group input:focus-visible, .form-group select:focus-visible{
+  border-color:var(--accent); outline:2px solid var(--accent); outline-offset:1px;
+}
+.form-row{display:grid; grid-template-columns:repeat(auto-fit, minmax(220px,1fr)); gap:16px}
+
+.btn{
+  padding:10px 20px; border:none; border-radius:var(--radius-sm); font-size:13px; cursor:pointer;
+  min-height:40px; touch-action:manipulation; font-family:inherit; font-weight:500;
+  transition:background-color .15s ease, color .15s ease, border-color .15s ease, filter .15s ease;
+}
+.btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.btn-primary{background:var(--accent); color:#fff}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-primary:disabled{opacity:.6; cursor:not-allowed}
+.btn-success{background:var(--success); color:#fff}
+.btn-success:hover{filter:brightness(0.92)}
+.btn-danger{background:var(--danger); color:#fff}
+.btn-danger:hover{filter:brightness(0.92)}
+.btn-sm{padding:6px 12px; font-size:12px; min-height:32px}
+
+.badge{display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; font-weight:600; white-space:nowrap}
+.badge.builtin{background:var(--info-bg); color:var(--info)}
+.badge.url_text{background:var(--success-bg); color:var(--success)}
+.badge.dynamic{background:var(--warning-bg); color:var(--warning)}
+.badge.on{background:var(--success-bg); color:var(--success)}
+.badge.off{background:var(--danger-bg); color:var(--danger)}
+.badge.env{background:var(--info-bg); color:var(--info); margin-left:6px}
+
+.api-item{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:12px; box-shadow:var(--shadow)}
+.api-item h3{color:var(--accent); font-size:14px; margin-bottom:8px}
+.api-item .url{color:var(--success); font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13px; margin-bottom:6px}
+.api-item .desc{color:var(--text-muted); font-size:13px; margin-bottom:8px}
+.api-item pre{background:var(--bg); border-radius:var(--radius-sm); padding:10px; font-size:12px; color:var(--text-muted); overflow-x:auto}
+
+.table-wrap{max-height:600px; overflow:auto; -webkit-overflow-scrolling:touch; border-radius:var(--radius); border:1px solid var(--border)}
+.loading{text-align:center; padding:40px; color:var(--text-subtle)}
+
+.sort-btn{
+  padding:6px 12px; font-size:12px; background:var(--surface-3); color:var(--text-muted);
+  border:1px solid var(--border-strong); border-radius:var(--radius-sm); cursor:pointer;
+  min-height:32px; touch-action:manipulation; font-family:inherit;
+  transition:background-color .15s ease, color .15s ease, border-color .15s ease;
+}
+.sort-btn:hover{color:var(--text)}
+.sort-btn:focus-visible{outline:2px solid var(--accent); outline-offset:2px}
+.sort-btn.active{background:var(--accent); color:#fff; border-color:var(--accent)}
+
+.selected-row td{background:var(--accent-soft) !important}
+
+iframe.proxy-result{width:100%; height:500px; border:1px solid var(--border); border-radius:var(--radius); background:#fff}
+
+.section-title{font-size:14px; color:var(--text-muted); margin:16px 0 8px}
+
+/* 辅助类：替代JS模板中的内联颜色 */
+.text-success{color:var(--success)}
+.text-danger{color:var(--danger)}
+.text-info{color:var(--info)}
+.text-warning{color:var(--warning)}
+.text-muted{color:var(--text-muted)}
+.text-subtle{color:var(--text-subtle)}
+.text-accent{color:var(--accent)}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.code-block{background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); padding:12px}
+.small-muted{font-size:11px; color:var(--text-muted)}
+.small-subtle{font-size:11px; color:var(--text-subtle)}
+.ellipsis-cell{max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.empty-row{text-align:center; color:var(--text-subtle); padding:24px 12px}
+
+/* Skip link 可访问性 */
+.skip-link{position:absolute; left:-9999px; top:0; z-index:100; background:var(--surface); color:var(--text); padding:8px 12px; border-radius:var(--radius-sm); border:1px solid var(--border); text-decoration:none}
+.skip-link:focus{left:8px; top:8px}
+
+/* 响应式 */
+@media (max-width: 768px) {
+  :root{--content-pad:16px}
+  .header{padding-top:max(12px, env(safe-area-inset-top)); padding-bottom:12px}
+  .header h1{font-size:17px}
+  .card .value{font-size:22px}
+  .form-row{grid-template-columns:1fr}
+  iframe.proxy-result{height:360px}
+}
+@media (max-width: 640px) {
+  :root{--content-pad:12px}
+  .card .value{font-size:20px}
+  .chart-box{padding:12px}
+  .chart-box canvas{max-height:260px}
+  .proxy-list-source{display:none}
+  .form-group input, .form-group select{max-width:100%}
+}
+@media (min-width: 1400px){.content{max-width:1600px}}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after{transition-duration:0.01ms !important; animation-duration:0.01ms !important}
+}
 </style>
 </head>
 <body>
+<a href="#panel-stats" class="skip-link">跳到主内容</a>
 <div class="header">
   <h1>Proxy Pool Dashboard</h1>
-  <div class="status" id="lastUpdate">-</div>
+  <div style="display:flex;align-items:center;gap:12px">
+    <div class="status" id="lastUpdate" aria-live="polite">—</div>
+    <button type="button" class="theme-toggle" id="themeToggle" aria-label="切换主题" title="切换主题">🌙</button>
+  </div>
 </div>
-<div class="tabs">
-  <div class="tab active" data-tab="stats">代理统计</div>
-  <div class="tab" data-tab="proxy_list">代理列表</div>
-  <div class="tab" data-tab="proxy_test">代理测试</div>
-  <div class="tab" data-tab="ai_config">AI 配置</div>
-  <div class="tab" data-tab="system_config">系统配置</div>
-  <div class="tab" data-tab="activity">每日动态</div>
-  <div class="tab" data-tab="sources">代理源管理</div>
-  <div class="tab" data-tab="api">API 文档</div>
-  <div class="tab" data-tab="audit_logs">日志查询</div>
+<div class="tabs" role="tablist" aria-label="主导航">
+  <button type="button" class="tab active" role="tab" id="tab-stats" aria-selected="true" aria-controls="panel-stats" data-tab="stats">代理统计</button>
+  <button type="button" class="tab" role="tab" id="tab-proxy_list" aria-selected="false" aria-controls="panel-proxy_list" data-tab="proxy_list">代理列表</button>
+  <button type="button" class="tab" role="tab" id="tab-proxy_test" aria-selected="false" aria-controls="panel-proxy_test" data-tab="proxy_test">代理测试</button>
+  <button type="button" class="tab" role="tab" id="tab-ai_config" aria-selected="false" aria-controls="panel-ai_config" data-tab="ai_config">AI 配置</button>
+  <button type="button" class="tab" role="tab" id="tab-system_config" aria-selected="false" aria-controls="panel-system_config" data-tab="system_config">系统配置</button>
+  <button type="button" class="tab" role="tab" id="tab-activity" aria-selected="false" aria-controls="panel-activity" data-tab="activity">每日动态</button>
+  <button type="button" class="tab" role="tab" id="tab-sources" aria-selected="false" aria-controls="panel-sources" data-tab="sources">代理源管理</button>
+  <button type="button" class="tab" role="tab" id="tab-api" aria-selected="false" aria-controls="panel-api" data-tab="api">API 文档</button>
+  <button type="button" class="tab" role="tab" id="tab-audit_logs" aria-selected="false" aria-controls="panel-audit_logs" data-tab="audit_logs">日志查询</button>
 </div>
 <div class="content">
 
 <!-- Tab: Stats -->
-<div class="panel active" id="panel-stats">
+<div class="panel active" id="panel-stats" role="tabpanel" aria-labelledby="tab-stats" tabindex="-1">
   <div class="cards" id="statCards"></div>
   <div class="charts">
     <div class="chart-box"><h3>HTTP / HTTPS 分布</h3><canvas id="chartProtocol"></canvas></div>
@@ -94,19 +250,19 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
 </div>
 
 <!-- Tab: Proxy List -->
-<div class="panel" id="panel-proxy_list">
+<div class="panel" id="panel-proxy_list" role="tabpanel" aria-labelledby="tab-proxy_list" tabindex="-1">
   <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:16px;flex-wrap:wrap">
     <div class="form-group" style="margin:0">
-      <label>协议过滤</label>
-      <select id="proxyFilterHttps" onchange="loadProxyList()">
+      <label for="proxyFilterHttps">协议过滤</label>
+      <select id="proxyFilterHttps" autocomplete="off" onchange="loadProxyList()">
         <option value="">全部</option>
         <option value="1">仅 HTTPS</option>
         <option value="0">仅 HTTP</option>
       </select>
     </div>
     <div class="form-group" style="margin:0">
-      <label>排序方式</label>
-      <select id="proxySortBy" onchange="loadProxyList()">
+      <label for="proxySortBy">排序方式</label>
+      <select id="proxySortBy" autocomplete="off" onchange="loadProxyList()">
         <option value="speed">速度（快到慢）</option>
         <option value="check_count">验证次数</option>
         <option value="use_count">使用次数</option>
@@ -114,39 +270,39 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
       </select>
     </div>
     <div class="form-group" style="margin:0">
-      <label>每页数量</label>
-      <select id="proxyPageSize" onchange="loadProxyList()">
+      <label for="proxyPageSize">每页数量</label>
+      <select id="proxyPageSize" autocomplete="off" onchange="loadProxyList()">
         <option value="20">20</option>
         <option value="50" selected>50</option>
         <option value="100">100</option>
       </select>
     </div>
     <div class="form-group" style="margin:0;display:flex;align-items:flex-end">
-      <button class="btn btn-primary" onclick="loadProxyList()">刷新</button>
+      <button type="button" class="btn btn-primary" onclick="loadProxyList()">刷新</button>
     </div>
     <div style="flex:1"></div>
-    <div style="font-size:13px;color:#888" id="proxyListInfo"></div>
+    <div class="small-muted" style="font-size:13px" id="proxyListInfo" aria-live="polite"></div>
   </div>
   <div class="table-wrap" style="max-height:560px">
     <table>
       <thead><tr>
         <th>代理地址</th><th>类型</th><th>延时(s)</th><th>验证次数</th>
-        <th>使用次数</th><th>状态</th><th>最近检查</th><th>来源</th><th>操作</th>
+        <th>使用次数</th><th>状态</th><th>最近检查</th><th class="proxy-list-source">来源</th><th>操作</th>
       </tr></thead>
       <tbody id="proxyListTable"></tbody>
     </table>
   </div>
-  <div style="display:flex;justify-content:center;gap:8px;margin-top:16px" id="proxyListPager"></div>
+  <div style="display:flex;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap" id="proxyListPager"></div>
 </div>
 
 <!-- Tab: Proxy Test -->
-<div class="panel" id="panel-proxy_test">
+<div class="panel" id="panel-proxy_test" role="tabpanel" aria-labelledby="tab-proxy_test" tabindex="-1">
   <div class="chart-box">
     <h3>选择代理</h3>
     <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
       <div class="form-group" style="margin:0">
-        <label>协议过滤</label>
-        <select id="proxyTestFilterHttps" onchange="loadProxyTestList(1)">
+        <label for="proxyTestFilterHttps">协议过滤</label>
+        <select id="proxyTestFilterHttps" autocomplete="off" onchange="loadProxyTestList(1)">
           <option value="">全部</option>
           <option value="1">仅 HTTPS</option>
           <option value="0">仅 HTTP</option>
@@ -155,20 +311,20 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
       <div class="form-group" style="margin:0">
         <label>延时排序</label>
         <div style="display:flex;gap:6px">
-          <button type="button" class="sort-btn active" id="sortBtnAsc" onclick="toggleProxyTestSort('asc')">升序 (快→慢)</button>
-          <button type="button" class="sort-btn" id="sortBtnDesc" onclick="toggleProxyTestSort('desc')">降序 (慢→快)</button>
+          <button type="button" class="sort-btn active" id="sortBtnAsc" aria-pressed="true" onclick="toggleProxyTestSort('asc')">升序 (快→慢)</button>
+          <button type="button" class="sort-btn" id="sortBtnDesc" aria-pressed="false" onclick="toggleProxyTestSort('desc')">降序 (慢→快)</button>
         </div>
       </div>
       <div class="form-group" style="margin:0">
-        <label>每页数量</label>
-        <select id="proxyTestPageSize" onchange="loadProxyTestList(1)">
+        <label for="proxyTestPageSize">每页数量</label>
+        <select id="proxyTestPageSize" autocomplete="off" onchange="loadProxyTestList(1)">
           <option value="20" selected>20</option>
           <option value="50">50</option>
           <option value="100">100</option>
         </select>
       </div>
       <div style="flex:1"></div>
-      <div style="font-size:13px;color:#888" id="proxyTestListInfo"></div>
+      <div class="small-muted" style="font-size:13px" id="proxyTestListInfo" aria-live="polite"></div>
     </div>
     <div class="table-wrap" style="max-height:340px">
       <table>
@@ -178,54 +334,54 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
         <tbody id="proxyTestTable"></tbody>
       </table>
     </div>
-    <div style="display:flex;justify-content:center;gap:8px;margin-top:12px" id="proxyTestPager"></div>
+    <div style="display:flex;justify-content:center;gap:8px;margin-top:12px;flex-wrap:wrap" id="proxyTestPager"></div>
   </div>
 
   <div class="chart-box" style="margin-top:16px">
     <h3>测试配置</h3>
     <div class="form-row">
-      <div class="form-group"><label>目标 URL</label>
-        <input id="testTargetUrl" value="https://www.ipip.net/" placeholder="https://example.com">
+      <div class="form-group"><label for="testTargetUrl">目标 URL</label>
+        <input id="testTargetUrl" type="url" autocomplete="url" value="https://www.ipip.net/" placeholder="https://example.com">
       </div>
-      <div class="form-group"><label>代理地址（点击上方"选中"或手动输入，留空随机）</label>
-        <input id="testProxyAddr" placeholder="1.2.3.4:8080">
+      <div class="form-group"><label for="testProxyAddr">代理地址（点击上方“选中”或手动输入，留空随机）</label>
+        <input id="testProxyAddr" autocomplete="off" placeholder="1.2.3.4:8080">
       </div>
       <div class="form-group" style="display:flex;align-items:flex-end">
-        <button class="btn btn-primary" id="btnProxyTest" onclick="runProxyTest()">开始测试</button>
+        <button type="button" class="btn btn-primary" id="btnProxyTest" onclick="runProxyTest()">开始测试</button>
       </div>
     </div>
   </div>
 
-  <div class="chart-box" style="margin-top:16px" id="proxyTestResultBox" style="display:none">
+  <div class="chart-box" id="proxyTestResultBox" style="display:none;margin-top:16px">
     <h3>测试结果</h3>
-    <div id="proxyTestResult"></div>
+    <div id="proxyTestResult" aria-live="polite"></div>
   </div>
 </div>
 
 <!-- Tab: AI Config -->
-<div class="panel" id="panel-ai_config">
+<div class="panel" id="panel-ai_config" role="tabpanel" aria-labelledby="tab-ai_config" tabindex="-1">
   <div class="charts">
     <div class="chart-box">
       <h3>AI 搜索配置</h3>
       <div style="margin-top:8px">
         <div class="form-row">
-          <div class="form-group"><label>API Base URL <span id="envLabel_api_base_url"></span></label><input id="cfgBaseUrl" placeholder="https://api.openai.com/v1"></div>
-          <div class="form-group"><label>API Key <span id="envLabel_api_key"></span></label><input id="cfgApiKey" type="password" placeholder="sk-..."></div>
+          <div class="form-group"><label for="cfgBaseUrl">API Base URL <span id="envLabel_api_base_url"></span></label><input id="cfgBaseUrl" type="url" autocomplete="off" placeholder="https://api.openai.com/v1"></div>
+          <div class="form-group"><label for="cfgApiKey">API Key <span id="envLabel_api_key"></span></label><input id="cfgApiKey" type="password" autocomplete="off" spellcheck="false" placeholder="sk-…"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>模型 <span id="envLabel_model"></span></label><input id="cfgModel" placeholder="gpt-3.5-turbo"></div>
-          <div class="form-group"><label>搜索时间（小时 0-23） <span id="envLabel_search_hour"></span></label><input id="cfgSearchHour" type="number" min="0" max="23"></div>
+          <div class="form-group"><label for="cfgModel">模型 <span id="envLabel_model"></span></label><input id="cfgModel" autocomplete="off" placeholder="gpt-3.5-turbo"></div>
+          <div class="form-group"><label for="cfgSearchHour">搜索时间（小时 0-23） <span id="envLabel_search_hour"></span></label><input id="cfgSearchHour" type="number" autocomplete="off" min="0" max="23"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>最大探索源数 <span id="envLabel_max_sources"></span></label><input id="cfgMaxSources" type="number" min="1" max="20"></div>
-          <div class="form-group"><label>API 超时（秒） <span id="envLabel_api_timeout"></span></label><input id="cfgApiTimeout" type="number" min="10" max="300"></div>
+          <div class="form-group"><label for="cfgMaxSources">最大探索源数 <span id="envLabel_max_sources"></span></label><input id="cfgMaxSources" type="number" autocomplete="off" min="1" max="20"></div>
+          <div class="form-group"><label for="cfgApiTimeout">API 超时（秒） <span id="envLabel_api_timeout"></span></label><input id="cfgApiTimeout" type="number" autocomplete="off" min="10" max="300"></div>
         </div>
         <div class="form-row">
-          <div class="form-group"><label>启用定时搜索 <span id="envLabel_search_enabled"></span></label>
-            <select id="cfgSearchEnabled"><option value="true">启用</option><option value="false">禁用</option></select>
+          <div class="form-group"><label for="cfgSearchEnabled">启用定时搜索 <span id="envLabel_search_enabled"></span></label>
+            <select id="cfgSearchEnabled" autocomplete="off"><option value="true">启用</option><option value="false">禁用</option></select>
           </div>
           <div class="form-group" style="display:flex;align-items:flex-end">
-            <button class="btn btn-primary" onclick="saveAIConfig()">保存配置</button>
+            <button type="button" class="btn btn-primary" onclick="saveAIConfig()">保存配置</button>
           </div>
         </div>
       </div>
@@ -233,58 +389,62 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
     <div class="chart-box">
       <h3>手动 AI 搜索</h3>
       <div style="margin-top:8px">
-        <button class="btn btn-success" id="btnAISearch" onclick="runAISearch()">立即执行 AI 搜索</button>
-        <div id="aiSearchResult" style="margin-top:16px"></div>
+        <button type="button" class="btn btn-success" id="btnAISearch" onclick="runAISearch()">立即执行 AI 搜索</button>
+        <div id="aiSearchResult" style="margin-top:16px" aria-live="polite"></div>
       </div>
       <h3 style="margin-top:20px">AI 发现的代理源</h3>
-      <table><thead><tr><th>名称</th><th>URL</th><th>描述</th><th>贡献</th></tr></thead>
-      <tbody id="aiSourcesTable"></tbody></table>
+      <div class="table-wrap">
+        <table><thead><tr><th>名称</th><th>URL</th><th>描述</th><th>贡献</th></tr></thead>
+        <tbody id="aiSourcesTable"></tbody></table>
+      </div>
     </div>
   </div>
   <div class="chart-box" style="margin-top:16px">
     <h3>AI 搜索历史</h3>
-    <table><thead><tr><th>时间</th><th>发现代理数</th><th>直接搜索</th><th>源探索数</th></tr></thead>
-    <tbody id="aiConfigLogTable"></tbody></table>
+    <div class="table-wrap">
+      <table><thead><tr><th>时间</th><th>发现代理数</th><th>直接搜索</th><th>源探索数</th></tr></thead>
+      <tbody id="aiConfigLogTable"></tbody></table>
+    </div>
   </div>
 </div>
 
 <!-- Tab: System Config -->
-<div class="panel" id="panel-system_config">
+<div class="panel" id="panel-system_config" role="tabpanel" aria-labelledby="tab-system_config" tabindex="-1">
   <div class="chart-box">
     <h3>代理保鲜与选取策略</h3>
-    <p style="color:#888;font-size:13px;margin-bottom:16px">
+    <p class="text-muted" style="font-size:13px;margin-bottom:16px">
       配置代理池的保鲜（重新验证）间隔和选取权重。权重越大，该因素在选取时的影响越强。<br>
       <b>保鲜间隔</b>修改后需重启 scheduler 容器生效；<b>权重</b>保存后立即生效。
     </p>
     <div class="form-row">
       <div class="form-group">
-        <label>保鲜间隔（分钟）<span id="envLabel_refresh_interval"></span></label>
-        <input id="cfgRefreshInterval" type="number" min="1" max="60" step="1">
-        <small style="color:#666">调度器每 N 分钟重新验证池中所有代理</small>
+        <label for="cfgRefreshInterval">保鲜间隔（分钟）<span id="envLabel_refresh_interval"></span></label>
+        <input id="cfgRefreshInterval" type="number" autocomplete="off" min="1" max="60" step="1">
+        <small class="text-subtle">调度器每 N 分钟重新验证池中所有代理</small>
       </div>
     </div>
     <div class="form-row">
       <div class="form-group">
-        <label>鲜活度权重 <span id="envLabel_weight_recency"></span></label>
-        <input id="cfgWeightRecency" type="number" min="0" max="1" step="0.1">
-        <small style="color:#666">最近验证通过的代理更优先（指数衰减）</small>
+        <label for="cfgWeightRecency">鲜活度权重 <span id="envLabel_weight_recency"></span></label>
+        <input id="cfgWeightRecency" type="number" autocomplete="off" min="0" max="1" step="0.1">
+        <small class="text-subtle">最近验证通过的代理更优先（指数衰减）</small>
       </div>
       <div class="form-group">
-        <label>速度权重 <span id="envLabel_weight_speed"></span></label>
-        <input id="cfgWeightSpeed" type="number" min="0" max="1" step="0.1">
-        <small style="color:#666">响应速度越快的代理更优先</small>
+        <label for="cfgWeightSpeed">速度权重 <span id="envLabel_weight_speed"></span></label>
+        <input id="cfgWeightSpeed" type="number" autocomplete="off" min="0" max="1" step="0.1">
+        <small class="text-subtle">响应速度越快的代理更优先</small>
       </div>
     </div>
     <div class="form-row" style="margin-top:12px">
       <div class="form-group" style="display:flex;align-items:flex-end">
-        <button class="btn btn-primary" onclick="saveSystemConfig()">保存配置</button>
+        <button type="button" class="btn btn-primary" onclick="saveSystemConfig()">保存配置</button>
       </div>
-      <div id="systemConfigResult" style="margin-left:16px;font-size:13px"></div>
+      <div id="systemConfigResult" style="margin-left:16px;font-size:13px" aria-live="polite"></div>
     </div>
   </div>
   <div class="chart-box" style="margin-top:16px">
     <h3>选取策略说明</h3>
-    <div style="color:#aaa;font-size:13px;line-height:1.8">
+    <div class="text-muted" style="font-size:13px;line-height:1.8">
       <p><b>加权选取</b>：不再随机选取代理，而是根据综合得分加权随机。</p>
       <p><b>鲜活度</b>：使用指数衰减计算，刚验证的代理得分为 1.0，1 分钟后降至约 0.37，5 分钟后降至约 0.01。确保优先选择新鲜验证通过的代理。</p>
       <p><b>速度</b>：代理响应时间（秒）的倒数，越快得分越高。归一化到 [0, 1]。</p>
@@ -295,18 +455,20 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
 </div>
 
 <!-- Tab: Activity -->
-<div class="panel" id="panel-activity">
+<div class="panel" id="panel-activity" role="tabpanel" aria-labelledby="tab-activity" tabindex="-1">
   <div class="charts">
     <div class="chart-box"><h3>AI 搜索历史</h3>
-      <table><thead><tr><th>时间</th><th>发现数</th><th>直接搜索</th><th>源探索</th></tr></thead>
-      <tbody id="aiLogTable"></tbody></table>
+      <div class="table-wrap">
+        <table><thead><tr><th>时间</th><th>发现数</th><th>直接搜索</th><th>源探索</th></tr></thead>
+        <tbody id="aiLogTable"></tbody></table>
+      </div>
     </div>
     <div class="chart-box"><h3>每日新增代理</h3><canvas id="chartDaily"></canvas></div>
   </div>
 </div>
 
 <!-- Tab: Sources -->
-<div class="panel" id="panel-sources">
+<div class="panel" id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" tabindex="-1">
   <div class="cards" id="sourceCards"></div>
   <div class="table-wrap">
     <table><thead><tr><th>名称</th><th>类型</th><th>描述</th><th>来源文件</th><th>贡献代理数</th><th>状态</th></tr></thead>
@@ -315,43 +477,43 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
 </div>
 
 <!-- Tab: API -->
-<div class="panel" id="panel-api">
+<div class="panel" id="panel-api" role="tabpanel" aria-labelledby="tab-api" tabindex="-1">
   <div id="apiDocs"></div>
 </div>
 
 <!-- Tab: Audit Logs -->
-<div class="panel" id="panel-audit_logs">
+<div class="panel" id="panel-audit_logs" role="tabpanel" aria-labelledby="tab-audit_logs" tabindex="-1">
   <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:12px;flex-wrap:wrap">
     <div class="form-group" style="margin:0">
-      <label>结果过滤</label>
-      <select id="auditFilterSuccess" onchange="loadAuditLogs(1)">
+      <label for="auditFilterSuccess">结果过滤</label>
+      <select id="auditFilterSuccess" autocomplete="off" onchange="loadAuditLogs(1)">
         <option value="">全部</option>
         <option value="true">仅成功</option>
         <option value="false">仅失败</option>
       </select>
     </div>
     <div class="form-group" style="margin:0">
-      <label>每页数量</label>
-      <select id="auditPageSize" onchange="loadAuditLogs(1)">
+      <label for="auditPageSize">每页数量</label>
+      <select id="auditPageSize" autocomplete="off" onchange="loadAuditLogs(1)">
         <option value="20" selected>20</option>
         <option value="50">50</option>
         <option value="100">100</option>
       </select>
     </div>
     <div class="form-group" style="margin:0">
-      <label>关键字搜索</label>
-      <input type="text" id="auditKeyword" placeholder="目标URL/代理IP/错误..." style="min-width:260px" onkeydown="if(event.key==='Enter')loadAuditLogs(1)">
+      <label for="auditKeyword">关键字搜索</label>
+      <input type="text" id="auditKeyword" autocomplete="off" placeholder="目标URL/代理IP/错误…" style="min-width:260px" onkeydown="if(event.key==='Enter')loadAuditLogs(1)">
     </div>
     <div class="form-group" style="margin:0;display:flex;gap:6px">
-      <button class="btn btn-primary" onclick="loadAuditLogs()">查询</button>
+      <button type="button" class="btn btn-primary" onclick="loadAuditLogs()">查询</button>
       <button type="button" class="btn btn-success" id="btnAuditAutoRefresh" onclick="toggleAuditAutoRefresh()">自动刷新: 关</button>
     </div>
     <div style="flex:1"></div>
-    <div style="font-size:13px;color:#888" id="auditListInfo"></div>
+    <div class="small-muted" style="font-size:13px" id="auditListInfo" aria-live="polite"></div>
   </div>
-  <div style="font-size:12px;color:#666;margin-bottom:10px">
-    日志文件: <span id="auditFilePath" style="font-family:monospace;color:#5bd58a">-</span>
-    &nbsp;|&nbsp; 大小: <span id="auditFileSize" style="color:#aaa">-</span>
+  <div class="text-subtle" style="font-size:12px;margin-bottom:10px">
+    日志文件: <span id="auditFilePath" class="mono text-success">-</span>
+    &nbsp;|&nbsp; 大小: <span id="auditFileSize" class="text-muted">-</span>
   </div>
   <div class="table-wrap" style="max-height:560px">
     <table>
@@ -362,7 +524,7 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
       <tbody id="auditListTable"></tbody>
     </table>
   </div>
-  <div style="display:flex;justify-content:center;gap:8px;margin-top:16px" id="auditListPager"></div>
+  <div style="display:flex;justify-content:center;gap:8px;margin-top:16px;flex-wrap:wrap" id="auditListPager"></div>
 </div>
 
 </div>
@@ -381,22 +543,87 @@ let auditAutoRefresh = false;
 let auditAutoRefreshTimer = null;
 let auditLogsLoaded = false;
 
-// --- Tab switching ---
-document.querySelectorAll('.tab').forEach(t => {
-  t.addEventListener('click', () => {
-    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
-    document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
-    t.classList.add('active');
-    document.getElementById('panel-' + t.dataset.tab).classList.add('active');
-    // 日志查询 tab：首次激活时动态加载，已开启自动刷新时每次切换都刷新
-    if (t.dataset.tab === 'audit_logs') {
-      if (!auditLogsLoaded || auditAutoRefresh) {
-        auditLogsLoaded = true;
-        loadAuditLogs();
+// --- 主题切换初始化 ---
+function applyThemeIcon() {
+  const btn = document.getElementById('themeToggle');
+  if (!btn) return;
+  const isLight = document.documentElement.dataset.theme === 'light';
+  btn.textContent = isLight ? '☀' : '🌙';
+  btn.setAttribute('aria-label', isLight ? '切换到暗色主题' : '切换到亮色主题');
+}
+function toggleTheme() {
+  const cur = document.documentElement.dataset.theme || 'dark';
+  const next = cur === 'light' ? 'dark' : 'light';
+  document.documentElement.dataset.theme = next;
+  try { localStorage.setItem('pp-theme', next); } catch(e) {}
+  applyThemeIcon();
+  // 通知图表更新颜色
+  Object.values(charts).forEach(c => {
+    if (!c) return;
+    const tickColor = getComputedStyle(document.body).getPropertyValue('--text-muted').trim();
+    try {
+      if (c.options.scales) {
+        Object.values(c.options.scales).forEach(s => {
+          if (s && s.ticks) s.ticks.color = tickColor;
+        });
       }
+      if (c.options.plugins && c.options.plugins.legend && c.options.plugins.legend.labels) {
+        c.options.plugins.legend.labels.color = tickColor;
+      }
+      c.update('none');
+    } catch(e) {}
+  });
+}
+document.addEventListener('DOMContentLoaded', () => {
+  applyThemeIcon();
+  const themeBtn = document.getElementById('themeToggle');
+  if (themeBtn) themeBtn.addEventListener('click', toggleTheme);
+});
+
+// --- Tab switching ---
+const tabList = document.querySelectorAll('.tab');
+function activateTab(t) {
+  document.querySelectorAll('.tab').forEach(x => {
+    x.classList.remove('active');
+    x.setAttribute('aria-selected', 'false');
+  });
+  document.querySelectorAll('.panel').forEach(x => x.classList.remove('active'));
+  t.classList.add('active');
+  t.setAttribute('aria-selected', 'true');
+  document.getElementById('panel-' + t.dataset.tab).classList.add('active');
+  // 日志查询 tab：首次激活时动态加载，已开启自动刷新时每次切换都刷新
+  if (t.dataset.tab === 'audit_logs') {
+    if (!auditLogsLoaded || auditAutoRefresh) {
+      auditLogsLoaded = true;
+      loadAuditLogs();
     }
-    if (t.dataset.tab === 'system_config') {
-      loadSystemConfig();
+  }
+  if (t.dataset.tab === 'system_config') {
+    loadSystemConfig();
+  }
+}
+tabList.forEach(t => {
+  t.addEventListener('click', () => activateTab(t));
+  // 键盘左右箭头在 tab 之间切换（符合 role="tab" 期望）
+  t.addEventListener('keydown', (e) => {
+    const tabs = Array.from(document.querySelectorAll('.tab'));
+    const idx = tabs.indexOf(t);
+    if (e.key === 'ArrowRight' && idx < tabs.length - 1) {
+      e.preventDefault();
+      tabs[idx + 1].focus();
+      activateTab(tabs[idx + 1]);
+    } else if (e.key === 'ArrowLeft' && idx > 0) {
+      e.preventDefault();
+      tabs[idx - 1].focus();
+      activateTab(tabs[idx - 1]);
+    } else if (e.key === 'Home') {
+      e.preventDefault();
+      tabs[0].focus();
+      activateTab(tabs[0]);
+    } else if (e.key === 'End') {
+      e.preventDefault();
+      tabs[tabs.length - 1].focus();
+      activateTab(tabs[tabs.length - 1]);
     }
   });
 });
@@ -436,11 +663,12 @@ function renderPager(containerId, currentPage, totalPages, loadFnName) {
   let endP = Math.min(totalPages, startP + maxBtns - 1);
   if (endP - startP < maxBtns - 1) startP = Math.max(1, endP - maxBtns + 1);
   let html = '';
-  if (currentPage > 1) html += `<button class="btn btn-primary btn-sm" onclick="${loadFnName}(${currentPage - 1})">上一页</button>`;
+  if (currentPage > 1) html += `<button type="button" class="btn btn-primary btn-sm" aria-label="上一页" onclick="${loadFnName}(${currentPage - 1})">上一页</button>`;
   for (let i = startP; i <= endP; i++) {
-    html += `<button class="btn ${i === currentPage ? 'btn-danger' : 'btn-primary'} btn-sm" onclick="${loadFnName}(${i})">${i}</button>`;
+    const isCurrent = i === currentPage;
+    html += `<button type="button" class="btn ${isCurrent ? 'btn-danger' : 'btn-primary'} btn-sm" aria-label="第 ${i} 页"${isCurrent ? ' aria-current="page"' : ''} onclick="${loadFnName}(${i})">${i}</button>`;
   }
-  if (currentPage < totalPages) html += `<button class="btn btn-primary btn-sm" onclick="${loadFnName}(${currentPage + 1})">下一页</button>`;
+  if (currentPage < totalPages) html += `<button type="button" class="btn btn-primary btn-sm" aria-label="下一页" onclick="${loadFnName}(${currentPage + 1})">下一页</button>`;
   c.innerHTML = html;
 }
 
@@ -462,10 +690,10 @@ async function loadSources() {
 
   const tbody = document.getElementById('sourceTable');
   tbody.innerHTML = sources.map(s => `<tr>
-    <td style="font-family:monospace">${escapeHtml(s.name)}</td>
+    <td class="mono">${escapeHtml(s.name)}</td>
     <td><span class="badge ${s.type}">${s.type}</span></td>
     <td>${escapeHtml(s.description) || '-'}</td>
-    <td style="font-size:11px;color:#666">${escapeHtml(s.source_file) || '-'}</td>
+    <td class="small-subtle">${escapeHtml(s.source_file) || '-'}</td>
     <td>${s.contributed}</td>
     <td><span class="badge ${s.enabled ? 'on' : 'off'}">${s.enabled ? '启用' : '禁用'}</span></td>
   </tr>`).join('');
@@ -485,19 +713,20 @@ async function loadStats() {
       <div class="sub">min ${d.speed.min}s / max ${d.speed.max}s</div></div>`;
 
   destroyChart('chartProtocol');
+  const chartTickColor = getComputedStyle(document.body).getPropertyValue('--text-muted').trim() || '#9aa0b0';
   charts.chartProtocol = new Chart(document.getElementById('chartProtocol'), {
     type: 'doughnut',
     data: { labels: ['HTTP', 'HTTPS'], datasets: [{ data: [d.http_count, d.https_count],
       backgroundColor: ['#5b9bd5', '#d58a5b'] }] },
-    options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } } }
+    options: { responsive: true, plugins: { legend: { labels: { color: chartTickColor } } } }
   });
 
   destroyChart('chartHealth');
   charts.chartHealth = new Chart(document.getElementById('chartHealth'), {
     type: 'doughnut',
     data: { labels: ['健康', '不健康'], datasets: [{ data: [d.healthy_count, d.unhealthy_count],
-      backgroundColor: ['#5bd58a', '#d55b5b'] }] },
-    options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } } }
+      backgroundColor: ['#4ade80', '#f87171'] }] },
+    options: { responsive: true, plugins: { legend: { labels: { color: chartTickColor } } } }
   });
 
   const sb = d.speed.distribution;
@@ -505,9 +734,9 @@ async function loadStats() {
   charts.chartSpeed = new Chart(document.getElementById('chartSpeed'), {
     type: 'bar',
     data: { labels: Object.keys(sb), datasets: [{ data: Object.values(sb),
-      backgroundColor: '#7c8aff' }] },
+      backgroundColor: '#6e7bff' }] },
     options: { responsive: true, plugins: { legend: { display: false } },
-      scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888' } } } }
+      scales: { x: { ticks: { color: chartTickColor } }, y: { ticks: { color: chartTickColor } } } }
   });
 
   const ts = d.top_sources || [];
@@ -515,29 +744,29 @@ async function loadStats() {
   charts.chartTopSources = new Chart(document.getElementById('chartTopSources'), {
     type: 'bar',
     data: { labels: ts.map(x => x.name), datasets: [{ data: ts.map(x => x.count),
-      backgroundColor: '#5bd58a' }] },
+      backgroundColor: '#4ade80' }] },
     options: { indexAxis: 'y', responsive: true, plugins: { legend: { display: false } },
-      scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888', font: { size: 10 } } } } }
+      scales: { x: { ticks: { color: chartTickColor } }, y: { ticks: { color: chartTickColor, font: { size: 10 } } } } }
   });
 }
 
 // --- API Docs ---
 function loadAPIDocs() {
   const projectDesc = `
-    <div class="api-item" style="border-color:#7c8aff">
-      <h3 style="color:#7c8aff;font-size:16px">Proxy Pool 代理池</h3>
-      <div class="desc" style="line-height:1.8;color:#bbb">
+    <div class="api-item" style="border-color:var(--accent)">
+      <h3 style="font-size:16px">Proxy Pool 代理池</h3>
+      <div class="desc text-muted" style="line-height:1.8">
         爬虫代理IP池，定时采集免费代理、验证入库、提供 API 和虚拟代理服务器两种使用方式。<br>
-        <strong style="color:#5bd58a">虚拟代理服务器</strong>：外部应用将本服务设为 HTTP/HTTPS 代理即可使用整个代理池，
+        <strong class="text-success">虚拟代理服务器</strong>：外部应用将本服务设为 HTTP/HTTPS 代理即可使用整个代理池，
         内部自动挑选可用代理转发流量，支持 HTTP 直连和 HTTPS CONNECT 隧道，失败自动重试换代理。
       </div>
-      <div style="margin-top:12px;padding:12px;background:#0f1117;border-radius:6px;border:1px solid #2a2d3a">
-        <div style="font-size:12px;color:#888;margin-bottom:6px">虚拟代理服务器地址</div>
-        <div style="font-family:monospace;font-size:14px;color:#5bd58a">http://${VIRTUAL_PROXY_URL}</div>
-        <div style="font-size:12px;color:#666;margin-top:8px">使用示例：</div>
+      <div class="code-block" style="margin-top:12px">
+        <div class="text-muted" style="font-size:12px;margin-bottom:6px">虚拟代理服务器地址</div>
+        <div class="mono text-success" style="font-size:14px">http://${VIRTUAL_PROXY_URL}</div>
+        <div class="text-subtle" style="font-size:12px;margin-top:8px">使用示例：</div>
         <pre style="margin-top:4px">curl -x http://${VIRTUAL_PROXY_URL} http://myip.ipip.net\ncurl -x http://${VIRTUAL_PROXY_URL} https://api.ipify.org -k\n\n# Python requests\nproxies = {"http": "http://${VIRTUAL_PROXY_URL}", "https": "http://${VIRTUAL_PROXY_URL}"}\nr = requests.get("https://www.baidu.com", proxies=proxies, verify=False)</pre>
       </div>
-      <div style="margin-top:8px;font-size:12px;color:#666">API 基地址：<span style="font-family:monospace;color:#aaa">${API_BASE_URL}</span></div>
+      <div class="text-subtle" style="margin-top:8px;font-size:12px">API 基地址：<span class="mono text-muted">${API_BASE_URL}</span></div>
     </div>`;
 
   const apis = [
@@ -588,17 +817,17 @@ async function loadProxyList(page) {
   const tbody = document.getElementById('proxyListTable');
   tbody.innerHTML = proxies.length
     ? proxies.map(p => `<tr>
-        <td style="font-family:monospace">${escapeHtml(p.proxy) || '-'}</td>
+        <td class="mono">${escapeHtml(p.proxy) || '-'}</td>
         <td><span class="badge ${p.https ? 'on' : 'off'}">${p.https ? 'HTTPS' : 'HTTP'}</span></td>
         <td>${p.speed > 0 ? p.speed.toFixed(3) : '-'}</td>
         <td>${p.check_count || 0}</td>
         <td>${p.use_count || 0}</td>
         <td><span class="badge ${p.last_status ? 'on' : 'off'}">${p.last_status ? '健康' : '异常'}</span></td>
-        <td style="font-size:11px;color:#888">${escapeHtml(p.last_time) || '-'}</td>
-        <td style="font-size:11px;max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(p.source)}">${escapeHtml(p.source) || '-'}</td>
+        <td class="small-subtle">${escapeHtml(p.last_time) || '-'}</td>
+        <td class="proxy-list-source small-subtle ellipsis-cell" title="${escapeHtml(p.source)}">${escapeHtml(p.source) || '-'}</td>
         <td><button class="btn btn-primary btn-sm" onclick="testProxyFromList('${escapeHtml(p.proxy)}')">测试</button></td>
       </tr>`).join('')
-    : '<tr><td colspan="9" style="text-align:center;color:#666">暂无代理</td></tr>';
+    : '<tr><td colspan="9" class="empty-row">暂无代理</td></tr>';
 
   const totalPages = Math.ceil(data.total / data.page_size);
   renderPager('proxyListPager', proxyListPage, totalPages, 'loadProxyList');
@@ -623,15 +852,15 @@ async function loadProxyTestList(page) {
     ? proxies.map(p => {
         const isSel = selectedProxyForTest === p.proxy ? 'selected-row' : '';
         return `<tr class="${isSel}">
-          <td style="font-family:monospace">${escapeHtml(p.proxy) || '-'}</td>
+          <td class="mono">${escapeHtml(p.proxy) || '-'}</td>
           <td><span class="badge ${p.https ? 'on' : 'off'}">${p.https ? 'HTTPS' : 'HTTP'}</span></td>
           <td>${p.speed > 0 ? p.speed.toFixed(3) : '-'}</td>
           <td><span class="badge ${p.last_status ? 'on' : 'off'}">${p.last_status ? '健康' : '异常'}</span></td>
-          <td style="font-size:11px;color:#888">${relativeTime(p.last_time)}</td>
+          <td class="small-subtle">${relativeTime(p.last_time)}</td>
           <td><button class="btn btn-primary btn-sm" onclick="selectProxyForTest('${escapeHtml(p.proxy)}')">选中</button></td>
         </tr>`;
       }).join('')
-    : '<tr><td colspan="6" style="text-align:center;color:#666">暂无代理</td></tr>';
+    : '<tr><td colspan="6" class="empty-row">暂无代理</td></tr>';
 
   const totalPages = Math.ceil(data.total / data.page_size);
   renderPager('proxyTestPager', proxyTestPage, totalPages, 'loadProxyTestList');
@@ -690,21 +919,21 @@ async function runProxyTest() {
           <div class="card"><div class="label">耗时</div><div class="value" style="font-size:16px">${res.elapsed}s</div></div>
           <div class="card"><div class="label">检测到IP</div><div class="value" style="font-size:14px">${(res.detected_ips || []).map(escapeHtml).join(', ') || '-'}</div></div>
         </div>
-        <div style="font-size:12px;color:#888;margin-bottom:8px">目标 URL: ${escapeHtml(res.target_url)}</div>
+        <div class="small-muted" style="margin-bottom:8px">目标 URL: ${escapeHtml(res.target_url)}</div>
         <div class="section-title">网页预览（iframe）</div>
         <iframe class="proxy-result" sandbox="allow-same-origin" srcdoc="${srcDoc}"></iframe>
-        <details style="margin-top:12px"><summary style="cursor:pointer;color:#7c8aff;font-size:13px">查看纯文本（前 5000 字符）</summary>
-          <pre style="margin-top:8px;max-height:300px;overflow:auto;color:#aaa;background:#0f1117;padding:10px;border-radius:4px">${escapeHtml(content.substring(0, 5000))}</pre>
+        <details style="margin-top:12px"><summary class="text-accent" style="cursor:pointer;font-size:13px">查看纯文本（前 5000 字符）</summary>
+          <pre class="code-block" style="margin-top:8px;max-height:300px;overflow:auto">${escapeHtml(content.substring(0, 5000))}</pre>
         </details>`;
     } else {
-      let failHtml = `<div style="color:#d55b5b">${escapeHtml(res.msg) || '测试失败'}</div>`;
+      let failHtml = `<div class="text-danger">${escapeHtml(res.msg) || '测试失败'}</div>`;
       if (res.pool_action) {
-        failHtml += `<div style="color:#e8a838;margin-top:6px;font-size:13px">池操作: ${escapeHtml(res.pool_action)}</div>`;
+        failHtml += `<div class="text-warning" style="margin-top:6px;font-size:13px">池操作: ${escapeHtml(res.pool_action)}</div>`;
       }
       resultDiv.innerHTML = failHtml;
     }
   } catch(e) {
-    resultDiv.innerHTML = `<div style="color:#d55b5b">请求失败: ${escapeHtml(e)}</div>`;
+    resultDiv.innerHTML = `<div class="text-danger">请求失败: ${escapeHtml(e)}</div>`;
   } finally {
     btn.disabled = false;
     btn.textContent = '开始测试';
@@ -718,16 +947,18 @@ async function loadActivity() {
   const logs = d.ai_search_log || [];
   document.getElementById('aiLogTable').innerHTML = logs.length
     ? logs.map(l => `<tr><td>${escapeHtml(l.time) || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
-    : '<tr><td colspan="4" style="text-align:center;color:#666">暂无 AI 搜索记录</td></tr>';
+    : '<tr><td colspan="4" class="empty-row">暂无 AI 搜索记录</td></tr>';
 
   const daily = (d.daily_counts || []).reverse();
   destroyChart('chartDaily');
+  const tickColor = getComputedStyle(document.body).getPropertyValue('--text-muted').trim() || '#9aa0b0';
+  const accentVar = getComputedStyle(document.body).getPropertyValue('--accent').trim() || '#6e7bff';
   charts.chartDaily = new Chart(document.getElementById('chartDaily'), {
     type: 'line',
     data: { labels: daily.map(x => x.date), datasets: [{ label: '新增代理', data: daily.map(x => x.count),
-      borderColor: '#7c8aff', backgroundColor: 'rgba(124,138,255,0.1)', fill: true, tension: 0.3 }] },
-    options: { responsive: true, plugins: { legend: { labels: { color: '#aaa' } } },
-      scales: { x: { ticks: { color: '#888' } }, y: { ticks: { color: '#888' } } } }
+      borderColor: accentVar, backgroundColor: 'rgba(110,123,255,0.12)', fill: true, tension: 0.3 }] },
+    options: { responsive: true, plugins: { legend: { labels: { color: tickColor } } },
+      scales: { x: { ticks: { color: tickColor } }, y: { ticks: { color: tickColor } } } }
   });
 }
 
@@ -766,8 +997,8 @@ async function loadAIConfig() {
     const srcData = await fetchJSON('/api/sources/');
     const aiSrc = (srcData.sources || []).filter(s => s.type !== 'builtin');
     document.getElementById('aiSourcesTable').innerHTML = aiSrc.length
-      ? aiSrc.map(s => `<tr><td style="font-family:monospace">${escapeHtml(s.name)}</td><td style="font-size:11px;word-break:break-all">${escapeHtml(s.url) || '-'}</td><td>${escapeHtml(s.description) || '-'}</td><td>${s.contributed}</td></tr>`).join('')
-      : '<tr><td colspan="4" style="text-align:center;color:#666">暂无 AI 发现的源</td></tr>';
+      ? aiSrc.map(s => `<tr><td class="mono">${escapeHtml(s.name)}</td><td class="small-subtle" style="word-break:break-all">${escapeHtml(s.url) || '-'}</td><td>${escapeHtml(s.description) || '-'}</td><td>${s.contributed}</td></tr>`).join('')
+      : '<tr><td colspan="4" class="empty-row">暂无 AI 发现的源</td></tr>';
   } catch(e) {}
 
   try {
@@ -775,7 +1006,7 @@ async function loadAIConfig() {
     const logs = act.ai_search_log || [];
     document.getElementById('aiConfigLogTable').innerHTML = logs.length
       ? logs.map(l => `<tr><td>${escapeHtml(l.time) || '-'}</td><td>${l.total_found || 0}</td><td>${l.direct_count || 0}</td><td>${l.source_count || 0}</td></tr>`).join('')
-      : '<tr><td colspan="4" style="text-align:center;color:#666">暂无记录</td></tr>';
+      : '<tr><td colspan="4" class="empty-row">暂无记录</td></tr>';
   } catch(e) {}
 }
 
@@ -807,17 +1038,17 @@ async function runAISearch() {
     const r = await fetch('/api/ai/search/', {method: 'POST'});
     const res = await r.json();
     if (res.code === 1) {
-      const srcList = (res.sources_added || []).map(s => '<div style="font-size:12px;color:#5bd58a;margin:2px 0">' + escapeHtml(s.url || s.name) + '</div>').join('');
+      const srcList = (res.sources_added || []).map(s => '<div class="text-success" style="font-size:12px;margin:2px 0">' + escapeHtml(s.url || s.name) + '</div>').join('');
       resultDiv.innerHTML = `
         <div class="card" style="margin-bottom:8px"><div class="label">搜索结果</div>
           <div class="value" style="font-size:18px">发现 ${res.proxies_found} 个代理，待验证 ${res.proxies_to_validate} 个</div></div>
         ${srcList ? '<div style="margin-top:8px"><div class="label">新增 AI 源:</div>' + srcList + '</div>' : ''}`;
     } else {
-      resultDiv.innerHTML = '<div style="color:#d55b5b">' + (escapeHtml(res.msg) || '搜索失败') + '</div>';
+      resultDiv.innerHTML = '<div class="text-danger">' + (escapeHtml(res.msg) || '搜索失败') + '</div>';
     }
     loadAIConfig();
   } catch(e) {
-    resultDiv.innerHTML = '<div style="color:#d55b5b">请求失败: ' + escapeHtml(e) + '</div>';
+    resultDiv.innerHTML = '<div class="text-danger">请求失败: ' + escapeHtml(e) + '</div>';
   } finally {
     btn.disabled = false;
     btn.textContent = '立即执行 AI 搜索';
@@ -850,7 +1081,7 @@ async function saveSystemConfig() {
     weight_speed: parseFloat(document.getElementById('cfgWeightSpeed').value),
   };
   const resultDiv = document.getElementById('systemConfigResult');
-  resultDiv.style.color = '#aaa';
+  resultDiv.className = 'text-muted';
   resultDiv.textContent = '保存中...';
   try {
     const r = await fetch('/api/system/config/', {
@@ -858,15 +1089,15 @@ async function saveSystemConfig() {
     });
     const res = await r.json();
     if (res.code === 1) {
-      resultDiv.style.color = '#5bd58a';
+      resultDiv.className = 'text-success';
       resultDiv.textContent = '✓ 已保存（保鲜间隔需重启 scheduler 容器生效）';
       loadSystemConfig();
     } else {
-      resultDiv.style.color = '#d55b5b';
+      resultDiv.className = 'text-danger';
       resultDiv.textContent = escapeHtml(res.msg || '保存失败');
     }
   } catch(e) {
-    resultDiv.style.color = '#d55b5b';
+    resultDiv.className = 'text-danger';
     resultDiv.textContent = '请求失败: ' + escapeHtml(e);
   }
 }
@@ -895,17 +1126,17 @@ async function loadAuditLogs(page) {
     const tbody = document.getElementById('auditListTable');
     tbody.innerHTML = logs.length
       ? logs.map(l => `<tr>
-          <td style="font-size:11px;white-space:nowrap">${escapeHtml(l.ts) || '-'}</td>
+          <td class="small-subtle" style="white-space:nowrap">${escapeHtml(l.ts) || '-'}</td>
           <td><span class="badge ${l.success ? 'on' : 'off'}">${l.success ? '成功' : '失败'}</span></td>
           <td><span class="badge builtin">${escapeHtml(l.method) || '-'}</span></td>
           <td>${l.status != null ? l.status : '-'}</td>
-          <td style="font-family:monospace;font-size:11px">${escapeHtml(l.proxy) || '-'}</td>
-          <td style="font-size:11px;max-width:280px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(l.target)}">${escapeHtml(l.target) || '-'}</td>
-          <td style="font-size:11px;color:#888">${escapeHtml(l.client) || '-'}</td>
+          <td class="mono small-subtle">${escapeHtml(l.proxy) || '-'}</td>
+          <td class="small-subtle ellipsis-cell" style="max-width:280px" title="${escapeHtml(l.target)}">${escapeHtml(l.target) || '-'}</td>
+          <td class="small-subtle">${escapeHtml(l.client) || '-'}</td>
           <td style="white-space:nowrap">${l.duration != null ? l.duration + 's' : '-'}</td>
-          <td style="font-size:11px;color:#d55b5b;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(l.error)}">${escapeHtml(l.error) || '-'}</td>
+          <td class="text-danger small-subtle ellipsis-cell" style="max-width:200px" title="${escapeHtml(l.error)}">${escapeHtml(l.error) || '-'}</td>
         </tr>`).join('')
-      : '<tr><td colspan="9" style="text-align:center;color:#666">暂无日志</td></tr>';
+      : '<tr><td colspan="9" class="empty-row">暂无日志</td></tr>';
 
     renderPager('auditListPager', auditLogPage, totalPages, 'loadAuditLogs');
   } catch(e) {
