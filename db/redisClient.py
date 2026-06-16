@@ -10,16 +10,41 @@
                    2019/08/09: 封装Redis相关操作
                    2020/06/23: 优化pop方法, 改用hscan命令
                    2021/05/26: 区别http/https代理
+                   2026/06/16: 加权选取替代随机选取（鲜活度+速度）
 ------------------------------------------------------
 """
 __author__ = 'JHao'
 
+import os
+import time as _time
+import math
+import json
+from datetime import datetime
 from redis.exceptions import TimeoutError, ConnectionError, ResponseError
 from redis.connection import BlockingConnectionPool
 from handler.logHandler import LogHandler
-from random import choice
+from random import choices as _choices, choice
 from redis import Redis
-import json
+
+# 加权选取权重（可通过环境变量覆盖）
+_W_RECENCY = float(os.getenv("PROXY_WEIGHT_RECENCY", "0.7"))
+_W_SPEED = float(os.getenv("PROXY_WEIGHT_SPEED", "0.3"))
+
+
+def _proxy_score(data, now):
+    """根据鲜活度和速度计算代理得分，得分越高越优先被选中"""
+    lt = data.get("last_time", "")
+    try:
+        ts = datetime.strptime(lt, "%Y-%m-%d %H:%M:%S").timestamp() if lt else 0
+    except Exception:
+        ts = 0
+    age = max(1.0, now - ts) if ts > 0 else 1e9
+    # 指数衰减：刚验证=1.0, 1分钟前≈0.37, 5分钟前≈0.01
+    recency = math.exp(-age / 60.0)
+    # 速度得分：越快越高，归一化到 [0, 1]
+    speed = max(0.05, float(data.get("speed") or 1.0))
+    speed_score = min(1.0, 1.0 / speed / 5.0)
+    return _W_RECENCY * recency + _W_SPEED * speed_score
 
 
 class RedisClient(object):
@@ -49,17 +74,32 @@ class RedisClient(object):
 
     def get(self, https):
         """
-        返回一个代理
-        :return:
+        加权选取一个代理：鲜活度+速度加权，优先返回最近验证通过且速度快的代理。
+        仅从 last_status=True 的代理中选取。
         """
+        items = self.__conn.hvals(self.name)
+        if not items:
+            return None
         if https:
-            items = self.__conn.hvals(self.name)
-            proxies = list(filter(lambda x: json.loads(x).get("https"), items))
-            return choice(proxies) if proxies else None
-        else:
-            proxies = self.__conn.hkeys(self.name)
-            proxy = choice(proxies) if proxies else None
-            return self.__conn.hget(self.name, proxy) if proxy else None
+            items = [x for x in items if json.loads(x).get("https")]
+        # 仅选取最近验证通过的代理
+        valid = []
+        for item in items:
+            try:
+                d = json.loads(item)
+                if d.get("last_status"):
+                    valid.append((item, d))
+            except Exception:
+                pass
+        if not valid:
+            # 全部未验证通过时 fallback 到任意代理
+            return choice(items) if items else None
+        if len(valid) == 1:
+            return valid[0][0]
+        now = _time.time()
+        scores = [max(0.001, _proxy_score(d, now)) for _, d in valid]
+        items_only = [v[0] for v in valid]
+        return _choices(items_only, weights=scores, k=1)[0]
 
     def put(self, proxy_obj):
         """

@@ -74,6 +74,7 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
   <div class="tab" data-tab="proxy_list">代理列表</div>
   <div class="tab" data-tab="proxy_test">代理测试</div>
   <div class="tab" data-tab="ai_config">AI 配置</div>
+  <div class="tab" data-tab="system_config">系统配置</div>
   <div class="tab" data-tab="activity">每日动态</div>
   <div class="tab" data-tab="sources">代理源管理</div>
   <div class="tab" data-tab="api">API 文档</div>
@@ -247,6 +248,52 @@ iframe.proxy-result{width:100%;height:500px;border:1px solid #2a2d3a;border-radi
   </div>
 </div>
 
+<!-- Tab: System Config -->
+<div class="panel" id="panel-system_config">
+  <div class="chart-box">
+    <h3>代理保鲜与选取策略</h3>
+    <p style="color:#888;font-size:13px;margin-bottom:16px">
+      配置代理池的保鲜（重新验证）间隔和选取权重。权重越大，该因素在选取时的影响越强。<br>
+      <b>保鲜间隔</b>修改后需重启 scheduler 容器生效；<b>权重</b>保存后立即生效。
+    </p>
+    <div class="form-row">
+      <div class="form-group">
+        <label>保鲜间隔（分钟）<span id="envLabel_refresh_interval"></span></label>
+        <input id="cfgRefreshInterval" type="number" min="1" max="60" step="1">
+        <small style="color:#666">调度器每 N 分钟重新验证池中所有代理</small>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>鲜活度权重 <span id="envLabel_weight_recency"></span></label>
+        <input id="cfgWeightRecency" type="number" min="0" max="1" step="0.1">
+        <small style="color:#666">最近验证通过的代理更优先（指数衰减）</small>
+      </div>
+      <div class="form-group">
+        <label>速度权重 <span id="envLabel_weight_speed"></span></label>
+        <input id="cfgWeightSpeed" type="number" min="0" max="1" step="0.1">
+        <small style="color:#666">响应速度越快的代理更优先</small>
+      </div>
+    </div>
+    <div class="form-row" style="margin-top:12px">
+      <div class="form-group" style="display:flex;align-items:flex-end">
+        <button class="btn btn-primary" onclick="saveSystemConfig()">保存配置</button>
+      </div>
+      <div id="systemConfigResult" style="margin-left:16px;font-size:13px"></div>
+    </div>
+  </div>
+  <div class="chart-box" style="margin-top:16px">
+    <h3>选取策略说明</h3>
+    <div style="color:#aaa;font-size:13px;line-height:1.8">
+      <p><b>加权选取</b>：不再随机选取代理，而是根据综合得分加权随机。</p>
+      <p><b>鲜活度</b>：使用指数衰减计算，刚验证的代理得分为 1.0，1 分钟后降至约 0.37，5 分钟后降至约 0.01。确保优先选择新鲜验证通过的代理。</p>
+      <p><b>速度</b>：代理响应时间（秒）的倒数，越快得分越高。归一化到 [0, 1]。</p>
+      <p><b>综合得分</b> = 鲜活度权重 × 鲜活度分 + 速度权重 × 速度分</p>
+      <p><b>过滤</b>：仅从 <code>last_status=True</code>（最近验证通过）的代理中选取。</p>
+    </div>
+  </div>
+</div>
+
 <!-- Tab: Activity -->
 <div class="panel" id="panel-activity">
   <div class="charts">
@@ -347,6 +394,9 @@ document.querySelectorAll('.tab').forEach(t => {
         auditLogsLoaded = true;
         loadAuditLogs();
       }
+    }
+    if (t.dataset.tab === 'system_config') {
+      loadSystemConfig();
     }
   });
 });
@@ -506,6 +556,8 @@ function loadAPIDocs() {
     { url: 'GET /api/dashboard/activity/', desc: '每日动态和AI搜索记录', params: '无', example: '/api/dashboard/activity/', resp: '{"ai_search_log": [...], ...}' },
     { url: 'GET /api/proxies/list/?page=1&size=50&sort=speed&sort_order=asc&https=1', desc: '代理列表（分页+排序+过滤）', params: 'page, size, sort: speed|check_count|use_count|last_time, sort_order: asc|desc, https: 1|0|空', example: '/api/proxies/list/?page=1&size=20&sort=speed&sort_order=asc', resp: '{"total": 150, "page": 1, "proxies": [...]}' },
     { url: 'POST /api/proxy/test/', desc: '通过代理测试目标URL', params: 'url: 目标URL, proxy: 代理地址(可选)', example: '/api/proxy/test/', resp: '{"code": 1, "proxy_used": "...", "status_code": 200, "elapsed": 1.5}' },
+    { url: 'GET /api/system/config/', desc: '获取系统配置（保鲜间隔/选取权重）', params: '无', example: '/api/system/config/', resp: '{"refresh_interval_min": 2, "weight_recency": 0.7, "weight_speed": 0.3}' },
+    { url: 'POST /api/system/config/', desc: '保存系统配置', params: 'refresh_interval_min: 分钟(1-60), weight_recency: 0-1, weight_speed: 0-1', example: '/api/system/config/', resp: '{"code": 1, "msg": "系统配置已保存"}' },
   ];
   const apisHtml = apis.map(a => `
     <div class="api-item">
@@ -769,6 +821,53 @@ async function runAISearch() {
   } finally {
     btn.disabled = false;
     btn.textContent = '立即执行 AI 搜索';
+  }
+}
+
+// --- System Config ---
+async function loadSystemConfig() {
+  try {
+    const cfg = await fetchJSON('/api/system/config/');
+    document.getElementById('cfgRefreshInterval').value = cfg.refresh_interval_min;
+    document.getElementById('cfgWeightRecency').value = cfg.weight_recency;
+    document.getElementById('cfgWeightSpeed').value = cfg.weight_speed;
+    // 环境变量提示
+    const envSet = new Set(cfg.env_sourced || []);
+    const map = {refresh_interval_min: 'envLabel_refresh_interval',
+                 weight_recency: 'envLabel_weight_recency',
+                 weight_speed: 'envLabel_weight_speed'};
+    for (const [k, labelId] of Object.entries(map)) {
+      const el = document.getElementById(labelId);
+      if (el) el.textContent = envSet.has(k) ? ' (ENV)' : '';
+    }
+  } catch(e) { console.error('loadSystemConfig error:', e); }
+}
+
+async function saveSystemConfig() {
+  const data = {
+    refresh_interval_min: parseInt(document.getElementById('cfgRefreshInterval').value) || 2,
+    weight_recency: parseFloat(document.getElementById('cfgWeightRecency').value),
+    weight_speed: parseFloat(document.getElementById('cfgWeightSpeed').value),
+  };
+  const resultDiv = document.getElementById('systemConfigResult');
+  resultDiv.style.color = '#aaa';
+  resultDiv.textContent = '保存中...';
+  try {
+    const r = await fetch('/api/system/config/', {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+    });
+    const res = await r.json();
+    if (res.code === 1) {
+      resultDiv.style.color = '#5bd58a';
+      resultDiv.textContent = '✓ 已保存（保鲜间隔需重启 scheduler 容器生效）';
+      loadSystemConfig();
+    } else {
+      resultDiv.style.color = '#d55b5b';
+      resultDiv.textContent = escapeHtml(res.msg || '保存失败');
+    }
+  } catch(e) {
+    resultDiv.style.color = '#d55b5b';
+    resultDiv.textContent = '请求失败: ' + escapeHtml(e);
   }
 }
 

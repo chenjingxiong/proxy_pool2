@@ -178,3 +178,14 @@ AI_MAX_SOURCES = 10
 
 # AI API请求超时时间（秒）
 AI_API_TIMEOUT = 60
+
+# ############# proxy freshness & selection config #################
+# 代理保鲜（重新验证）间隔，分钟 — 调度器每 N 分钟重新验证池中所有代理
+PROXY_REFRESH_INTERVAL_MIN = 2
+
+# 加权选取权重（用于代理选择，避免纯随机）
+# 鲜活度权重：最近验证时间越近，权重越高（指数衰减，1分钟衰减到 37%）
+PROXY_WEIGHT_RECENCY = 0.7
+
+# 速度权重：代理响应速度越快，权重越高
+PROXY_WEIGHT_SPEED = 0.3

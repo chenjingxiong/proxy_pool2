@@ -491,6 +491,45 @@ def apiAiSearch():
         return {"code": 0, "msg": str(e)}
 
 
+# ===================== System Config API =====================
+@app.route('/api/system/config/', methods=['GET'])
+def apiSystemConfigGet():
+    """获取系统配置（保鲜间隔、选取权重）"""
+    from handler.configHandler import _get_system_env_sourced_keys
+    _conf = ConfigHandler()
+    return {
+        "refresh_interval_min": _conf.refreshIntervalMin,
+        "weight_recency": _conf.weightRecency,
+        "weight_speed": _conf.weightSpeed,
+        "env_sourced": _get_system_env_sourced_keys(),
+        "note": "修改后需重启 scheduler 容器才能让调度器应用新的保鲜间隔；权重在下次请求时即生效",
+    }
+
+
+@app.route('/api/system/config/', methods=['POST'])
+def apiSystemConfigPost():
+    """保存系统配置"""
+    data = request.get_json(force=True) or {}
+    try:
+        # 类型转换 + 范围校验
+        normalized = {}
+        if 'refresh_interval_min' in data and data['refresh_interval_min'] != '':
+            v = int(data['refresh_interval_min'])
+            if not (1 <= v <= 60):
+                return {"code": 0, "msg": "保鲜间隔需在 1-60 分钟之间"}
+            normalized['refresh_interval_min'] = v
+        for k in ('weight_recency', 'weight_speed'):
+            if k in data and data[k] != '':
+                v = float(data[k])
+                if not (0.0 <= v <= 1.0):
+                    return {"code": 0, "msg": f"{k} 需在 0.0-1.0 之间"}
+                normalized[k] = v
+        ConfigHandler.save_system_config(normalized)
+        return {"code": 1, "msg": "系统配置已保存"}
+    except (ValueError, TypeError) as e:
+        return {"code": 0, "msg": f"参数格式错误: {e}"}
+
+
 # ===================== Proxy List & Test API =====================
 
 @app.route('/api/proxies/list/')

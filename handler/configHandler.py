@@ -8,6 +8,7 @@
 -------------------------------------------------
    Change Activity:
                    2020/6/22:
+                   2026/06/16: 新增系统配置（保鲜间隔/选取权重）
 -------------------------------------------------
 """
 __author__ = 'JHao'
@@ -24,10 +25,50 @@ AI_CONFIG_FILE = os.path.join(
     'conf', 'ai_config.ini'
 )
 
+SYSTEM_CONFIG_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    'conf', 'system_config.ini'
+)
+
 _AI_PROPERTIES = [
     'aiApiKey', 'aiApiBaseUrl', 'aiModel',
     'aiSearchEnabled', 'aiSearchHour', 'aiMaxSources', 'aiApiTimeout',
 ]
+
+_SYSTEM_PROPERTIES = [
+    'refreshIntervalMin', 'weightRecency', 'weightSpeed',
+]
+
+
+def _load_system_config():
+    """读取 conf/system_config.ini, 环境变量优先覆盖（仅内存，不写回磁盘）"""
+    result = {}
+    config = configparser.ConfigParser()
+    if os.path.isfile(SYSTEM_CONFIG_FILE):
+        config.read(SYSTEM_CONFIG_FILE, encoding='utf-8')
+        if config.has_section('system'):
+            result = dict(config.items('system'))
+
+    # 环境变量覆盖（仅内存）
+    env_override = {
+        'refresh_interval_min': os.getenv('PROXY_REFRESH_INTERVAL_MIN', ''),
+        'weight_recency': os.getenv('PROXY_WEIGHT_RECENCY', ''),
+        'weight_speed': os.getenv('PROXY_WEIGHT_SPEED', ''),
+    }
+    for k, v in env_override.items():
+        if v:
+            result[k] = v
+
+    return result
+
+
+def _get_system_env_sourced_keys():
+    env_map = {
+        'refresh_interval_min': os.getenv('PROXY_REFRESH_INTERVAL_MIN', ''),
+        'weight_recency': os.getenv('PROXY_WEIGHT_RECENCY', ''),
+        'weight_speed': os.getenv('PROXY_WEIGHT_SPEED', ''),
+    }
+    return [k for k, v in env_map.items() if v]
 
 
 def _load_ai_config():
@@ -155,6 +196,43 @@ class ConfigHandler(withMetaclass(Singleton)):
             if hasattr(inst, prop):
                 delattr(inst, prop)
 
+    @classmethod
+    def save_system_config(cls, data):
+        """写入系统配置到 INI 文件并清除缓存"""
+        # 环境变量保护：若环境变量有值且 UI 传来空值，保留环境变量
+        env_protection = {
+            'refresh_interval_min': os.getenv('PROXY_REFRESH_INTERVAL_MIN', ''),
+            'weight_recency': os.getenv('PROXY_WEIGHT_RECENCY', ''),
+            'weight_speed': os.getenv('PROXY_WEIGHT_SPEED', ''),
+        }
+        for k, env_val in env_protection.items():
+            if env_val and not data.get(k, ''):
+                data[k] = env_val
+
+        config = configparser.ConfigParser()
+        config.add_section('system')
+        mapping = {
+            'refresh_interval_min': str(data.get('refresh_interval_min', setting.PROXY_REFRESH_INTERVAL_MIN)),
+            'weight_recency': str(data.get('weight_recency', setting.PROXY_WEIGHT_RECENCY)),
+            'weight_speed': str(data.get('weight_speed', setting.PROXY_WEIGHT_SPEED)),
+        }
+        for k, v in mapping.items():
+            config.set('system', k, v)
+
+        env_sourced = _get_system_env_sourced_keys()
+        if env_sourced:
+            config.add_section('metadata')
+            config.set('metadata', 'env_sourced', ','.join(env_sourced))
+
+        os.makedirs(os.path.dirname(SYSTEM_CONFIG_FILE), exist_ok=True)
+        with open(SYSTEM_CONFIG_FILE, 'w', encoding='utf-8') as f:
+            config.write(f)
+
+        inst = cls()
+        for prop in _SYSTEM_PROPERTIES:
+            if hasattr(inst, prop):
+                delattr(inst, prop)
+
     @LazyProperty
     def serverHost(self):
         return os.environ.get("HOST", setting.HOST)
@@ -271,4 +349,24 @@ class ConfigHandler(withMetaclass(Singleton)):
     @LazyProperty
     def aiApiTimeout(self):
         return int(self._ai_cfg('api_timeout', os.getenv("AI_API_TIMEOUT", setting.AI_API_TIMEOUT)))
+
+    def _system_cfg(self, key, default):
+        ini = _load_system_config()
+        val = ini.get(key, '')
+        return val if val else default
+
+    @LazyProperty
+    def refreshIntervalMin(self):
+        return int(self._system_cfg('refresh_interval_min',
+                                     os.getenv("PROXY_REFRESH_INTERVAL_MIN", setting.PROXY_REFRESH_INTERVAL_MIN)))
+
+    @LazyProperty
+    def weightRecency(self):
+        return float(self._system_cfg('weight_recency',
+                                       os.getenv("PROXY_WEIGHT_RECENCY", setting.PROXY_WEIGHT_RECENCY)))
+
+    @LazyProperty
+    def weightSpeed(self):
+        return float(self._system_cfg('weight_speed',
+                                       os.getenv("PROXY_WEIGHT_SPEED", setting.PROXY_WEIGHT_SPEED)))
 
