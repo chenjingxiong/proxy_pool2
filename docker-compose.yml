@@ -25,6 +25,7 @@ services:
     env_file:
       - .env
     environment:
+      - TZ=Asia/Shanghai
       - DB_CONN=redis://:pwd@redis:6380/0
       - VIRTUAL_PROXY_AUDIT_FILE=/app/logs/virtual_proxy_audit.log
     volumes:
@@ -47,6 +48,7 @@ services:
     env_file:
       - .env
     environment:
+      - TZ=Asia/Shanghai
       - DB_CONN=redis://:pwd@redis:6380/0
     volumes:
       - ./conf:/app/conf
@@ -62,6 +64,7 @@ services:
     env_file:
       - .env
     environment:
+      - TZ=Asia/Shanghai
       - DB_CONN=redis://:pwd@redis:6380/0
       - VIRTUAL_PROXY_HOST=0.0.0.0
       - VIRTUAL_PROXY_PORT=5011
