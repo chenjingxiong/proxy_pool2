@@ -405,28 +405,34 @@ class ProxyFetcher(object):
     @staticmethod
     def freeProxy58():
         """ Argh94/Proxy-List (All_Config.txt) """
+        import re
         import requests
         url = "https://raw.githubusercontent.com/Argh94/Proxy-List/main/All_Config.txt"
+        ip_pattern = re.compile(r'(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}')
         try:
-            resp = requests.get(url, timeout=20, verify=False)
-            for line in resp.text.strip().split('\n'):
-                line = line.strip()
-                if line and ':' in line and not line.startswith('#'):
-                    yield line
+            with requests.get(url, timeout=20, verify=False, stream=True) as resp:
+                for chunk in resp.iter_content(chunk_size=65536, decode_unicode=True):
+                    if not chunk:
+                        continue
+                    for proxy in ip_pattern.findall(chunk):
+                        yield proxy
         except Exception as e:
             pass
 
     @staticmethod
     def freeProxy59():
         """ Argh94/Proxy-List (Trojan.txt) """
+        import re
         import requests
         url = "https://raw.githubusercontent.com/Argh94/Proxy-List/main/Trojan.txt"
+        ip_pattern = re.compile(r'(?:\d{1,3}\.){3}\d{1,3}:\d{2,5}')
         try:
-            resp = requests.get(url, timeout=20, verify=False)
-            for line in resp.text.strip().split('\n'):
-                line = line.strip()
-                if line and ':' in line and not line.startswith('#'):
-                    yield line
+            with requests.get(url, timeout=20, verify=False, stream=True) as resp:
+                for chunk in resp.iter_content(chunk_size=65536, decode_unicode=True):
+                    if not chunk:
+                        continue
+                    for proxy in ip_pattern.findall(chunk):
+                        yield proxy
         except Exception as e:
             pass
 

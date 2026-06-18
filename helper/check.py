@@ -153,7 +153,8 @@ def Checker(tp, queue):
     :return:
     """
     thread_list = list()
-    for index in range(20):
+    # 10 个并发足以打满网络验证瓶颈；过多会同时持有 resp.text 与 TLS 连接池，导致内存膨胀
+    for index in range(10):
         thread_list.append(_ThreadChecker(tp, queue, "thread_%s" % str(index).zfill(2)))
 
     for thread in thread_list:

@@ -14,7 +14,6 @@
 __author__ = 'JHao'
 
 from apscheduler.schedulers.blocking import BlockingScheduler
-from apscheduler.executors.pool import ProcessPoolExecutor
 
 from util.six import Queue
 from helper.fetch import Fetcher
@@ -70,22 +69,29 @@ def runScheduler():
     scheduler_log = LogHandler("scheduler")
     scheduler = BlockingScheduler(logger=scheduler_log, timezone=timezone)
 
-    scheduler.add_job(__runProxyFetch, 'interval', minutes=4, id="proxy_fetch", name="proxy采集")
+    # coalesce=True + max_instances=1：避免长任务与下一轮 fetch 重叠，导致 queue 堆积与内存膨胀
+    scheduler.add_job(__runProxyFetch, 'interval', minutes=4,
+                      id="proxy_fetch", name="proxy采集",
+                      max_instances=1, coalesce=True)
     scheduler.add_job(__runProxyCheck, 'interval', minutes=conf.refreshIntervalMin,
-                      id="proxy_check", name="proxy检查")
-    scheduler.add_job(runRefreshJob, 'interval', minutes=5, id="proxy_refresh", name="proxy刷新")
+                      id="proxy_check", name="proxy检查",
+                      max_instances=1, coalesce=True)
+    scheduler.add_job(runRefreshJob, 'interval', minutes=5,
+                      id="proxy_refresh", name="proxy刷新",
+                      max_instances=1, coalesce=True)
 
     if conf.aiSearchEnabled:
         scheduler.add_job(__runAISearch, 'cron', hour=conf.aiSearchHour, minute=0,
-                          id="ai_proxy_search", name="AI代理搜索")
+                          id="ai_proxy_search", name="AI代理搜索",
+                          max_instances=1, coalesce=True)
 
+    # 单一线程池足以串行/小并发执行上述任务；移除 ProcessPoolExecutor，避免额外 fork 进程
     executors = {
-        'default': {'type': 'threadpool', 'max_workers': 20},
-        'processpool': ProcessPoolExecutor(max_workers=5)
+        'default': {'type': 'threadpool', 'max_workers': 4}
     }
     job_defaults = {
-        'coalesce': False,
-        'max_instances': 10
+        'coalesce': True,
+        'max_instances': 1
     }
 
     scheduler.configure(executors=executors, job_defaults=job_defaults, timezone=timezone)
