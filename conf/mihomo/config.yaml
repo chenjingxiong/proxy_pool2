@@ -1,0 +1,10 @@
+mixed-port: 7890
+external-controller: 0.0.0.0:9090
+secret: ""
+proxies: []
+proxy-groups:
+  - name: "pool-selector"
+    type: select
+    proxies: [DIRECT]
+rules:
+  - MATCH,pool-selector

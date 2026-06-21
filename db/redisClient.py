@@ -47,6 +47,14 @@ def _proxy_score(data, now):
     return _W_RECENCY * recency + _W_SPEED * speed_score
 
 
+def _safe_get(json_str, key, default=None):
+    """安全从 JSON 字符串中取值"""
+    try:
+        return json.loads(json_str).get(key, default)
+    except Exception:
+        return default
+
+
 class RedisClient(object):
     """
     Redis client
@@ -72,27 +80,32 @@ class RedisClient(object):
                                                                    socket_timeout=5,
                                                                    **kwargs))
 
-    def get(self, https):
+    def get(self, https, scheme=None):
         """
         加权选取一个代理：鲜活度+速度加权，优先返回最近验证通过且速度快的代理。
-        仅从 last_status=True 的代理中选取。
+        从 last_status=True 或 last_status=None（加密协议待激活）的代理中选取。
+        scheme 参数可指定只选取某种协议（http/https/socks5/vmess/vless/trojan/ss）。
         """
         items = self.__conn.hvals(self.name)
         if not items:
             return None
         if https:
-            items = [x for x in items if json.loads(x).get("https")]
-        # 仅选取最近验证通过的代理
+            items = [x for x in items if _safe_get(x, "https")]
+        if scheme:
+            items = [x for x in items if _safe_get(x, "scheme", "http") == scheme]
+        # 仅选取 last_status != False 的代理（True 或 None）
         valid = []
         for item in items:
             try:
                 d = json.loads(item)
-                if d.get("last_status"):
-                    valid.append((item, d))
+                ls = d.get("last_status")
+                if ls is False:
+                    continue
+                valid.append((item, d))
             except Exception:
                 pass
         if not valid:
-            # 全部未验证通过时 fallback 到任意代理
+            # 全部验证失败时 fallback 到任意代理
             return choice(items) if items else None
         if len(valid) == 1:
             return valid[0][0]

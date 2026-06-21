@@ -6,6 +6,7 @@
                    CONNECT / 绝对URL → 代理转发（虚拟代理服务器）
                    相对路径 → 反向代理到 Flask/gunicorn（Web API + Dashboard）
                    每次代理调用记录审计日志（成功/失败、代理IP、状态码、目标URL等）。
+                   支持代理分流：HTTP/HTTPS 直连、SOCKS5 握手、加密协议通过 mihomo。
    date：          2026/06/16
 -------------------------------------------------
 """
@@ -15,6 +16,7 @@ import sys
 import time
 import asyncio
 import logging
+import struct
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -25,6 +27,8 @@ except ImportError:
     pass
 
 from handler.proxyHandler import ProxyHandler
+from handler.configHandler import ConfigHandler
+from helper.proxy import SCHEMES_ENCRYPTED
 from proxyServer.auditLog import AuditLogger
 
 log = logging.getLogger("virtual_proxy")
@@ -55,10 +59,27 @@ class VirtualProxyServer:
             max_size_kb=AUDIT_SIZE_KB,
             backup_count=AUDIT_BACKUP_COUNT,
         )
+        self.conf = ConfigHandler()
+        # 加密协议请求需要串行化（mihomo selector 是全局唯一）
+        self._mihomo_lock = asyncio.Lock()
+        self._mihomo_client = None  # 懒加载
+        # 不区分 scheme 时取任意可用代理
+        self._try_http_first = True
 
-    def _pick_proxy(self, exclude=None):
+    def _get_mihomo_client(self):
+        if self._mihomo_client is None:
+            try:
+                from handler.mihomoHandler import MihomoClient
+                self._mihomo_client = MihomoClient()
+            except Exception as exc:
+                log.warning("mihomo client init err: %s", exc)
+                return None
+        return self._mihomo_client
+
+    def _pick_proxy(self, exclude=None, scheme=None):
+        """从池子里选代理；指定 scheme 时只取该类型"""
         for _ in range(5):
-            proxy = self.proxy_handler.get()
+            proxy = self.proxy_handler.get(scheme=scheme)
             if not proxy:
                 return None
             if not exclude or proxy.proxy not in exclude:
@@ -109,6 +130,7 @@ class VirtualProxyServer:
             await self._handle_web(reader, writer, method, target, client_str, head)
 
     async def _handle_connect(self, reader, writer, target, client_str, head):
+        """CONNECT 方法：按 scheme 分流到 http/socks5/mihomo"""
         start = time.time()
         tried = set()
         last_proxy = ""
@@ -120,42 +142,34 @@ class VirtualProxyServer:
                 break
             tried.add(proxy_obj.proxy)
             last_proxy = proxy_obj.proxy
-            up_r, up_w = None, None
-            try:
-                ph, pp = proxy_obj.proxy.rsplit(":", 1)
-                up_r, up_w = await asyncio.wait_for(
-                    asyncio.open_connection(ph, int(pp)), timeout=CONNECT_TIMEOUT
-                )
-                up_w.write(
-                    f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode()
-                )
-                await up_w.drain()
 
-                resp = await asyncio.wait_for(
-                    up_r.readuntil(b"\r\n\r\n"), timeout=READ_TIMEOUT
-                )
-                status_line = resp.split(b"\r\n", 1)[0]
-                if b" 200 " in status_line:
-                    writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
-                    await writer.drain()
-                    log.info("CONNECT %s via %s (%s)", target, proxy_obj.proxy, client_str)
-                    self._mark_used(proxy_obj)
-                    await self._pipe(reader, writer, up_r, up_w, capture_status=False)
+            try:
+                if proxy_obj.scheme in SCHEMES_ENCRYPTED:
+                    # 加密协议：经 mihomo 转发
+                    success = await self._connect_via_mihomo(
+                        reader, writer, proxy_obj, target, client_str,
+                    )
+                elif proxy_obj.scheme == "socks5":
+                    # SOCKS5 代理：握手 + raw 隧道
+                    success = await self._connect_via_socks5(
+                        reader, writer, proxy_obj, target, client_str,
+                    )
+                else:
+                    # HTTP/HTTPS 代理：发送 CONNECT 请求
+                    success = await self._connect_via_http(
+                        reader, writer, proxy_obj, target, client_str, head,
+                    )
+                if success:
                     duration = round(time.time() - start, 3)
                     self.audit.log(client_str, "CONNECT", target, proxy_obj.proxy,
                                    True, 200, duration)
                     return
-                status_code = self._parse_status(status_line)
-                last_error = f"upstream {status_line.decode(errors='ignore')}"
-                up_w.close()
+                last_error = "upstream handshake failed"
+            except asyncio.TimeoutError:
+                last_error = "handshake timeout"
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 log.debug("CONNECT %s via %s err: %s", target, proxy_obj.proxy, exc)
-                if up_w:
-                    try:
-                        up_w.close()
-                    except Exception:
-                        pass
 
         duration = round(time.time() - start, 3)
         self.audit.log(client_str, "CONNECT", target, last_proxy,
@@ -163,6 +177,7 @@ class VirtualProxyServer:
         await self._write_response(writer, 502, b"Bad Gateway")
 
     async def _handle_http(self, reader, writer, method, target, client_str, head):
+        """HTTP/HTTPS 绝对 URL 请求：按 scheme 分流"""
         start = time.time()
         tried = set()
         last_proxy = ""
@@ -174,37 +189,264 @@ class VirtualProxyServer:
                 break
             tried.add(proxy_obj.proxy)
             last_proxy = proxy_obj.proxy
-            up_r, up_w = None, None
+
             try:
-                ph, pp = proxy_obj.proxy.rsplit(":", 1)
-                up_r, up_w = await asyncio.wait_for(
-                    asyncio.open_connection(ph, int(pp)), timeout=CONNECT_TIMEOUT
-                )
-                up_w.write(head)
-                await up_w.drain()
-                log.info("HTTP %s %s via %s (%s)", method, target[:60], proxy_obj.proxy, client_str)
-                self._mark_used(proxy_obj)
-                status = await self._pipe(reader, writer, up_r, up_w, capture_status=True)
-                duration = round(time.time() - start, 3)
-                # status=0 表示未收到有效 HTTP 响应（上游异常关闭/发回非 HTTP 数据），视为失败
+                if proxy_obj.scheme in SCHEMES_ENCRYPTED:
+                    # 加密协议：经 mihomo 转发，path 由 CONNECT 语义改为完整 URL
+                    status = await self._http_via_mihomo(
+                        reader, writer, proxy_obj, target, method, head, client_str,
+                    )
+                elif proxy_obj.scheme == "socks5":
+                    status = await self._http_via_socks5(
+                        reader, writer, proxy_obj, target, method, head, client_str,
+                    )
+                else:
+                    status = await self._http_via_http(
+                        reader, writer, proxy_obj, target, method, head, client_str,
+                    )
                 success = status > 0
+                duration = round(time.time() - start, 3)
                 self.audit.log(client_str, method, target, proxy_obj.proxy,
                                success, status, duration,
                                error="" if success else "no valid http response")
-                return
+                if success:
+                    return
+                last_error = "no valid http response"
+            except asyncio.TimeoutError:
+                last_error = "timeout"
             except Exception as exc:
                 last_error = f"{type(exc).__name__}: {exc}"
                 log.debug("HTTP %s via %s err: %s", target[:60], proxy_obj.proxy, exc)
-                if up_w:
-                    try:
-                        up_w.close()
-                    except Exception:
-                        pass
 
         duration = round(time.time() - start, 3)
         self.audit.log(client_str, method, target, last_proxy,
                        False, 502, duration, error=last_error)
         await self._write_response(writer, 502, b"Bad Gateway")
+
+    # ==================== HTTP 上游（原逻辑） ====================
+
+    async def _connect_via_http(self, c_reader, c_writer, proxy_obj, target, client_str, head):
+        """通过 HTTP 代理建立 CONNECT 隧道"""
+        ph, pp = proxy_obj.proxy.rsplit(":", 1)
+        up_r, up_w = await asyncio.wait_for(
+            asyncio.open_connection(ph, int(pp)), timeout=CONNECT_TIMEOUT
+        )
+        try:
+            up_w.write(
+                f"CONNECT {target} HTTP/1.1\r\nHost: {target}\r\n\r\n".encode()
+            )
+            await up_w.drain()
+            resp = await asyncio.wait_for(
+                up_r.readuntil(b"\r\n\r\n"), timeout=READ_TIMEOUT
+            )
+            status_line = resp.split(b"\r\n", 1)[0]
+            if b" 200 " not in status_line:
+                up_w.close()
+                return False
+            c_writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            await c_writer.drain()
+            log.info("CONNECT %s via %s (%s)", target, proxy_obj.proxy, client_str)
+            self._mark_used(proxy_obj)
+            await self._pipe(c_reader, c_writer, up_r, up_w, capture_status=False)
+            return True
+        finally:
+            try:
+                up_w.close()
+            except Exception:
+                pass
+
+    async def _http_via_http(self, c_reader, c_writer, proxy_obj, target, method, head, client_str):
+        """通过 HTTP 代理转发绝对 URL 请求"""
+        ph, pp = proxy_obj.proxy.rsplit(":", 1)
+        up_r, up_w = await asyncio.wait_for(
+            asyncio.open_connection(ph, int(pp)), timeout=CONNECT_TIMEOUT
+        )
+        try:
+            up_w.write(head)
+            await up_w.drain()
+            log.info("HTTP %s %s via %s (%s)", method, target[:60], proxy_obj.proxy, client_str)
+            self._mark_used(proxy_obj)
+            return await self._pipe(c_reader, c_writer, up_r, up_w, capture_status=True)
+        finally:
+            try:
+                up_w.close()
+            except Exception:
+                pass
+
+    # ==================== SOCKS5 上游 ====================
+
+    async def _socks5_handshake(self, up_r, up_w, target):
+        """SOCKS5 握手：协议协商 + 连接请求
+        target: host:port
+        """
+        host, _, port_str = target.partition(":")
+        port = int(port_str or "443")
+
+        # 1. 问候：version=5, methods=[no-auth(0)]
+        up_w.write(b"\x05\x01\x00")
+        await up_w.drain()
+        resp = await asyncio.wait_for(up_r.readexactly(2), timeout=READ_TIMEOUT)
+        if resp[0] != 0x05 or resp[1] != 0x00:
+            raise ConnectionError(f"socks5 method selection failed: {resp.hex()}")
+
+        # 2. 连接请求：CMD=CONNECT(1), ATYP=DOMAINNAME(3)
+        try:
+            ip_bytes = bytes(int(b) for b in host.split("."))
+            if len(ip_bytes) == 4:
+                # IPv4
+                req = b"\x05\x01\x00\x01" + ip_bytes + struct.pack(">H", port)
+            else:
+                raise ValueError()
+        except Exception:
+            # 域名
+            host_bytes = host.encode("idna") if not host.isdigit() else host.encode()
+            req = b"\x05\x01\x00\x03" + bytes([len(host_bytes)]) + host_bytes + struct.pack(">H", port)
+        up_w.write(req)
+        await up_w.drain()
+
+        # 3. 响应
+        rep = await asyncio.wait_for(up_r.readexactly(4), timeout=READ_TIMEOUT)
+        if rep[0] != 0x05 or rep[1] != 0x00:
+            raise ConnectionError(f"socks5 connect failed: rep={rep[1]}")
+        atyp = rep[3]
+        if atyp == 0x01:
+            await up_r.readexactly(4 + 2)  # IPv4 + port
+        elif atyp == 0x03:
+            length = (await up_r.readexactly(1))[0]
+            await up_r.readexactly(length + 2)
+        elif atyp == 0x04:
+            await up_r.readexactly(16 + 2)
+        else:
+            raise ConnectionError(f"socks5 unknown atyp: {atyp}")
+
+    async def _connect_via_socks5(self, c_reader, c_writer, proxy_obj, target, client_str):
+        """通过 SOCKS5 代理建立 CONNECT 隧道"""
+        ph, pp = proxy_obj.proxy.rsplit(":", 1)
+        up_r, up_w = await asyncio.wait_for(
+            asyncio.open_connection(ph, int(pp)), timeout=CONNECT_TIMEOUT
+        )
+        try:
+            await self._socks5_handshake(up_r, up_w, target)
+            c_writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+            await c_writer.drain()
+            log.info("CONNECT(SOCKS5) %s via %s (%s)", target, proxy_obj.proxy, client_str)
+            self._mark_used(proxy_obj)
+            await self._pipe(c_reader, c_writer, up_r, up_w, capture_status=False)
+            return True
+        finally:
+            try:
+                up_w.close()
+            except Exception:
+                pass
+
+    async def _http_via_socks5(self, c_reader, c_writer, proxy_obj, target, method, head, client_str):
+        """通过 SOCKS5 代理转发绝对 URL 请求
+        SOCKS5 不支持相对 URL，需要先解析出 target host:port
+        """
+        # target 形如 http://host:port/path
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(target)
+            target_host = parsed.hostname or ""
+            target_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except Exception:
+            return 0
+
+        ph, pp = proxy_obj.proxy.rsplit(":", 1)
+        up_r, up_w = await asyncio.wait_for(
+            asyncio.open_connection(ph, int(pp)), timeout=CONNECT_TIMEOUT
+        )
+        try:
+            await self._socks5_handshake(up_r, up_w, f"{target_host}:{target_port}")
+            up_w.write(head)
+            await up_w.drain()
+            log.info("HTTP(SOCKS5) %s %s via %s (%s)", method, target[:60], proxy_obj.proxy, client_str)
+            self._mark_used(proxy_obj)
+            return await self._pipe(c_reader, c_writer, up_r, up_w, capture_status=True)
+        finally:
+            try:
+                up_w.close()
+            except Exception:
+                pass
+
+    # ==================== mihomo（加密协议）上游 ====================
+
+    def _get_node_name(self, proxy_obj):
+        """从 Proxy.raw_uri 提取 Clash 用的节点 name"""
+        if not proxy_obj.raw_uri:
+            return None
+        try:
+            from handler.mihomoHandler import _uri_to_clash_entry
+            entry = _uri_to_clash_entry(proxy_obj.raw_uri, proxy_obj.scheme)
+            return entry.get("name") if entry else None
+        except Exception:
+            return None
+
+    async def _connect_via_mihomo(self, c_reader, c_writer, proxy_obj, target, client_str):
+        """加密协议：经 mihomo SOCKS5 转发 CONNECT 隧道"""
+        client = self._get_mihomo_client()
+        if not client:
+            return False
+        async with self._mihomo_lock:
+            node_name = self._get_node_name(proxy_obj)
+            if node_name:
+                client.switch_selector(node_name)
+            mihomo_host = self.conf.mihomoSocksHost
+            mihomo_port = self.conf.mihomoSocksPort
+            up_r, up_w = await asyncio.wait_for(
+                asyncio.open_connection(mihomo_host, mihomo_port), timeout=CONNECT_TIMEOUT
+            )
+            try:
+                await self._socks5_handshake(up_r, up_w, target)
+                c_writer.write(b"HTTP/1.1 200 Connection established\r\n\r\n")
+                await c_writer.drain()
+                log.info("CONNECT(mihomo) %s via %s (%s)", target, proxy_obj.scheme, client_str)
+                self._mark_used(proxy_obj)
+                await self._pipe(c_reader, c_writer, up_r, up_w, capture_status=False)
+                return True
+            finally:
+                try:
+                    up_w.close()
+                except Exception:
+                    pass
+
+    async def _http_via_mihomo(self, c_reader, c_writer, proxy_obj, target, method, head, client_str):
+        """加密协议：经 mihomo SOCKS5 转发绝对 URL 请求"""
+        client = self._get_mihomo_client()
+        if not client:
+            return 0
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(target)
+            target_host = parsed.hostname or ""
+            target_port = parsed.port or (443 if parsed.scheme == "https" else 80)
+        except Exception:
+            return 0
+
+        async with self._mihomo_lock:
+            node_name = self._get_node_name(proxy_obj)
+            if node_name:
+                client.switch_selector(node_name)
+            mihomo_host = self.conf.mihomoSocksHost
+            mihomo_port = self.conf.mihomoSocksPort
+            up_r, up_w = await asyncio.wait_for(
+                asyncio.open_connection(mihomo_host, mihomo_port), timeout=CONNECT_TIMEOUT
+            )
+            try:
+                await self._socks5_handshake(up_r, up_w, f"{target_host}:{target_port}")
+                up_w.write(head)
+                await up_w.drain()
+                log.info("HTTP(mihomo) %s %s via %s (%s)",
+                         method, target[:60], proxy_obj.scheme, client_str)
+                self._mark_used(proxy_obj)
+                return await self._pipe(c_reader, c_writer, up_r, up_w, capture_status=True)
+            finally:
+                try:
+                    up_w.close()
+                except Exception:
+                    pass
+
+    # ==================== Web 反向代理 + 通用 pipe ====================
 
     async def _handle_web(self, reader, writer, method, target, client_str, head):
         """相对路径请求 → 反向代理到内部 Flask/gunicorn"""

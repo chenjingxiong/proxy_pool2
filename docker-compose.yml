@@ -71,6 +71,9 @@ services:
       - VIRTUAL_PROXY_PORT=5010
       - FLASK_HOST=app
       - FLASK_PORT=5010
+      - MIHOMO_API_URL=http://mihomo:9090
+      - MIHOMO_SOCKS_HOST=mihomo
+      - MIHOMO_SOCKS_PORT=7890
       - VIRTUAL_PROXY_AUDIT_FILE=/app/logs/virtual_proxy_audit.log
       - VIRTUAL_PROXY_AUDIT_SIZE_KB=1024
       - VIRTUAL_PROXY_AUDIT_BACKUP_COUNT=5
@@ -86,6 +89,27 @@ services:
       app:
         condition: service_healthy
     restart: unless-stopped
+
+  mihomo:
+    image: metacubex/mihomo:latest
+    container_name: proxy_pool_mihomo
+    environment:
+      - TZ=CST-8
+    volumes:
+      - ./conf/mihomo:/root/.config/mihomo
+    expose:
+      - "7890"
+      - "9090"
+    ports:
+      - "7890:7890"
+      - "9090:9090"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/version"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   redis_data:

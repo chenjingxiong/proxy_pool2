@@ -8,6 +8,8 @@
 -------------------------------------------------
    Change Activity:
                    2019/7/11: 代理对象类型封装
+                   2026/06/18: 新增 scheme + raw_uri 支持非 HTTP 协议
+                                （vmess/vless/trojan/ss/socks5）
 -------------------------------------------------
 """
 __author__ = 'JHao'
@@ -15,11 +17,18 @@ __author__ = 'JHao'
 import json
 
 
+# 支持的代理协议
+SCHEMES_HTTP = ("http", "https", "socks5")
+SCHEMES_ENCRYPTED = ("vmess", "vless", "trojan", "ss")
+SCHEMES_ALL = SCHEMES_HTTP + SCHEMES_ENCRYPTED
+
+
 class Proxy(object):
 
     def __init__(self, proxy, fail_count=0, region="", anonymous="",
                  source="", check_count=0, last_status="", last_time="",
-                 https=False, speed=0.0, use_count=0):
+                 https=False, speed=0.0, use_count=0,
+                 scheme="http", raw_uri=""):
         self._proxy = proxy
         self._fail_count = fail_count
         self._region = region
@@ -31,6 +40,11 @@ class Proxy(object):
         self._https = https
         self._speed = speed
         self._use_count = use_count
+        # scheme: http/https/socks5/vmess/vless/trojan/ss
+        # 旧数据缺省为 http，保证兼容
+        self._scheme = scheme if scheme in SCHEMES_ALL else "http"
+        # raw_uri: 加密协议的原始 URI（用于 mihomo 反向重建配置）
+        self._raw_uri = raw_uri or ""
 
     @classmethod
     def createFromJson(cls, proxy_json):
@@ -45,7 +59,9 @@ class Proxy(object):
                    last_time=_dict.get("last_time", ""),
                    https=_dict.get("https", False),
                    speed=_dict.get("speed", 0.0),
-                   use_count=_dict.get("use_count", 0)
+                   use_count=_dict.get("use_count", 0),
+                   scheme=_dict.get("scheme", "http"),
+                   raw_uri=_dict.get("raw_uri", "")
                    )
 
     @property
@@ -109,6 +125,14 @@ class Proxy(object):
         return self._use_count
 
     @property
+    def scheme(self):
+        return self._scheme
+
+    @property
+    def raw_uri(self):
+        return self._raw_uri
+
+    @property
     def to_dict(self):
         """ 属性字典 """
         return {"proxy": self.proxy,
@@ -121,7 +145,9 @@ class Proxy(object):
                 "last_status": self.last_status,
                 "last_time": self.last_time,
                 "speed": self.speed,
-                "use_count": self.use_count}
+                "use_count": self.use_count,
+                "scheme": self.scheme,
+                "raw_uri": self.raw_uri}
 
     @property
     def to_json(self):
@@ -155,6 +181,14 @@ class Proxy(object):
     @use_count.setter
     def use_count(self, value):
         self._use_count = value
+
+    @scheme.setter
+    def scheme(self, value):
+        self._scheme = value if value in SCHEMES_ALL else "http"
+
+    @raw_uri.setter
+    def raw_uri(self, value):
+        self._raw_uri = value or ""
 
     @region.setter
     def region(self, value):

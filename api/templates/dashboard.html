@@ -147,6 +147,18 @@ tr:hover td{background:var(--surface-2)}
 .badge.on{background:var(--success-bg); color:var(--success)}
 .badge.off{background:var(--danger-bg); color:var(--danger)}
 .badge.env{background:var(--info-bg); color:var(--info); margin-left:6px}
+.badge.clash_yaml{background:var(--accent-soft); color:var(--accent)}
+.badge.subscription{background:var(--info-bg); color:var(--info)}
+.badge.single_node{background:var(--success-bg); color:var(--success)}
+.badge.plain_uri_list{background:var(--warning-bg); color:var(--warning)}
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal-box{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:20px;width:100%;max-height:90vh;overflow-y:auto;box-shadow:var(--shadow)}
+.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.modal-header h3{margin:0;font-size:16px}
+.modal-close{background:none;border:none;color:var(--text-muted);font-size:20px;cursor:pointer;padding:4px 8px;border-radius:var(--radius-sm)}
+.modal-close:hover{color:var(--text);background:var(--surface-2)}
+textarea{width:100%;background:var(--surface-2);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 12px;color:var(--text);font-size:13px;resize:vertical;font-family:monospace}
+textarea:focus{outline:none;border-color:var(--accent)}
 
 .api-item{background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:16px; margin-bottom:12px; box-shadow:var(--shadow)}
 .api-item h3{color:var(--accent); font-size:14px; margin-bottom:8px}
@@ -469,10 +481,64 @@ iframe.proxy-result{width:100%; height:500px; border:1px solid var(--border); bo
 
 <!-- Tab: Sources -->
 <div class="panel" id="panel-sources" role="tabpanel" aria-labelledby="tab-sources" tabindex="-1">
+  <h3 style="margin-bottom:8px;color:var(--text-muted);font-size:14px;font-weight:600">内置源</h3>
   <div class="cards" id="sourceCards"></div>
-  <div class="table-wrap">
+  <div class="table-wrap" style="margin-bottom:24px">
     <table><thead><tr><th>名称</th><th>类型</th><th>描述</th><th>来源文件</th><th>贡献代理数</th><th>状态</th></tr></thead>
     <tbody id="sourceTable"></tbody></table>
+  </div>
+
+  <h3 style="margin:20px 0 8px;color:var(--text-muted);font-size:14px;font-weight:600;border-top:1px solid var(--border);padding-top:16px">自定义订阅 &amp; 节点</h3>
+  <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+    <button type="button" class="btn btn-primary btn-sm" onclick="showSubModal('subscription')">+ 添加订阅</button>
+    <button type="button" class="btn btn-primary btn-sm" onclick="showSubModal('single_node')">+ 添加节点</button>
+    <a href="/export/clash/" target="_blank" class="btn btn-success btn-sm" style="text-decoration:none">导出 Clash YAML</a>
+    <a href="/export/v2ray/" target="_blank" class="btn btn-success btn-sm" style="text-decoration:none">导出 V2Ray</a>
+  </div>
+  <div class="table-wrap">
+    <table><thead><tr><th>名称</th><th>类型</th><th>描述</th><th>URL / 内容预览</th><th>状态</th><th>操作</th></tr></thead>
+    <tbody id="subscriptionTable"></tbody></table>
+  </div>
+</div>
+
+<!-- Subscription Modal -->
+<div class="modal-overlay" id="subModal" style="display:none" onclick="if(event.target===this)closeSubModal()">
+  <div class="modal-box" style="max-width:560px">
+    <div class="modal-header"><h3 id="subModalTitle">添加订阅</h3>
+      <button type="button" class="modal-close" onclick="closeSubModal()" aria-label="关闭">&times;</button>
+    </div>
+    <form id="subForm" onsubmit="return saveSub(event)">
+      <input type="hidden" id="subEditName" value="">
+      <div class="form-group">
+        <label for="subName">名称</label>
+        <input type="text" id="subName" required autocomplete="off" placeholder="my_clash_sub" pattern="[a-zA-Z0-9._-]+">
+      </div>
+      <div class="form-group">
+        <label for="subType">类型</label>
+        <select id="subType" onchange="onSubTypeChange()">
+          <option value="clash_yaml">Clash YAML 订阅</option>
+          <option value="subscription">HTTP/TXT 订阅</option>
+          <option value="single_node">单节点 URI</option>
+          <option value="plain_uri_list">多行 URI 列表</option>
+        </select>
+      </div>
+      <div class="form-group" id="subUrlGroup">
+        <label for="subUrl">订阅 URL</label>
+        <input type="url" id="subUrl" autocomplete="off" placeholder="https://example.com/sub.yaml">
+      </div>
+      <div class="form-group" id="subContentGroup" style="display:none">
+        <label for="subContent">节点 URI</label>
+        <textarea id="subContent" rows="5" autocomplete="off" placeholder="vmess://... 或 trojan://..."></textarea>
+      </div>
+      <div class="form-group">
+        <label for="subDesc">描述</label>
+        <input type="text" id="subDesc" autocomplete="off" placeholder="可选">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:16px">
+        <button type="button" class="btn" onclick="closeSubModal()">取消</button>
+        <button type="submit" class="btn btn-primary">保存</button>
+      </div>
+    </form>
   </div>
 </div>
 
@@ -1102,6 +1168,161 @@ async function saveSystemConfig() {
   }
 }
 
+// --- Subscriptions ---
+async function loadSubscriptions() {
+  let data = {subscriptions: [], total: 0};
+  try {
+    data = await fetchJSON('/api/subscriptions/');
+  } catch(e) { /* 端点可能未就绪 */ }
+  const tbody = document.getElementById('subscriptionTable');
+  const subs = data.subscriptions || [];
+  if (!subs.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-subtle);padding:20px">暂无自定义订阅/节点</td></tr>';
+    return;
+  }
+  tbody.innerHTML = subs.map(s => {
+    let preview = '';
+    if (s.url) preview = escapeHtml(s.url);
+    else if (s.content) preview = `<code class="small-subtle">${escapeHtml(s.content.slice(0,60))}${s.content.length > 60 ? '…' : ''}</code>`;
+    return `<tr>
+      <td class="mono">${escapeHtml(s.name)}</td>
+      <td><span class="badge ${s.type}">${s.type}</span></td>
+      <td>${escapeHtml(s.description) || '-'}</td>
+      <td style="max-width:340px;word-break:break-all">${preview || '-'}</td>
+      <td><span class="badge ${s.enabled ? 'on' : 'off'}">${s.enabled ? '启用' : '禁用'}</span></td>
+      <td>
+        <button type="button" class="btn btn-sm" onclick="testSub('${encodeURIComponent(s.name)}')">测试</button>
+        <button type="button" class="btn btn-sm" onclick="editSub('${encodeURIComponent(s.name)}')">编辑</button>
+        <button type="button" class="btn btn-sm" style="color:var(--danger)" onclick="deleteSub('${encodeURIComponent(s.name)}')">删除</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function showSubModal(type) {
+  document.getElementById('subModal').style.display = 'flex';
+  document.getElementById('subEditName').value = '';
+  document.getElementById('subModalTitle').textContent = type === 'single_node' ? '添加节点' : '添加订阅';
+  document.getElementById('subName').value = '';
+  document.getElementById('subName').disabled = false;
+  document.getElementById('subType').value = type;
+  document.getElementById('subUrl').value = '';
+  document.getElementById('subContent').value = '';
+  document.getElementById('subDesc').value = '';
+  onSubTypeChange();
+}
+
+async function editSub(name) {
+  name = decodeURIComponent(name);
+  try {
+    const resp = await fetch(`/api/subscriptions/${encodeURIComponent(name)}/`);
+    if (!resp.ok) { alert('加载失败'); return; }
+    const s = await resp.json();
+    document.getElementById('subModal').style.display = 'flex';
+    document.getElementById('subEditName').value = s.name;
+    document.getElementById('subModalTitle').textContent = '编辑: ' + s.name;
+    document.getElementById('subName').value = s.name;
+    document.getElementById('subName').disabled = true;
+    document.getElementById('subType').value = s.type;
+    document.getElementById('subUrl').value = s.url || '';
+    document.getElementById('subContent').value = s.content || '';
+    document.getElementById('subDesc').value = s.description || '';
+    onSubTypeChange();
+  } catch(e) { alert('加载失败: ' + e); }
+}
+
+function closeSubModal() {
+  document.getElementById('subModal').style.display = 'none';
+}
+
+function onSubTypeChange() {
+  const type = document.getElementById('subType').value;
+  const urlGroup = document.getElementById('subUrlGroup');
+  const contentGroup = document.getElementById('subContentGroup');
+  if (type === 'subscription' || type === 'clash_yaml') {
+    urlGroup.style.display = '';
+    contentGroup.style.display = 'none';
+    document.getElementById('subUrl').required = true;
+    document.getElementById('subContent').required = false;
+  } else {
+    urlGroup.style.display = 'none';
+    contentGroup.style.display = '';
+    document.getElementById('subUrl').required = false;
+    document.getElementById('subContent').required = true;
+  }
+}
+
+async function saveSub(event) {
+  event.preventDefault();
+  const editName = document.getElementById('subEditName').value;
+  const name = document.getElementById('subName').value.trim();
+  const type = document.getElementById('subType').value;
+  const url = document.getElementById('subUrl').value.trim();
+  const content = document.getElementById('subContent').value;
+  const description = document.getElementById('subDesc').value.trim();
+  const payload = {type, description, enabled: true};
+  if (type === 'subscription' || type === 'clash_yaml') payload.url = url;
+  else payload.content = content;
+
+  try {
+    let resp;
+    if (editName) {
+      resp = await fetch(`/api/subscriptions/${encodeURIComponent(editName)}/`, {
+        method: 'PUT', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+    } else {
+      payload.name = name;
+      resp = await fetch('/api/subscriptions/', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload),
+      });
+    }
+    const r = await resp.json();
+    if (r.code === 1) {
+      closeSubModal();
+      await loadSubscriptions();
+      alert('保存成功');
+    } else {
+      alert('保存失败: ' + (r.msg || '未知错误'));
+    }
+  } catch(e) { alert('保存异常: ' + e); }
+  return false;
+}
+
+async function deleteSub(name) {
+  name = decodeURIComponent(name);
+  if (!confirm(`确定删除订阅 "${name}" 吗？`)) return;
+  try {
+    const resp = await fetch(`/api/subscriptions/${encodeURIComponent(name)}/`, {method: 'DELETE'});
+    const r = await resp.json();
+    if (r.code === 1) {
+      await loadSubscriptions();
+    } else {
+      alert('删除失败: ' + (r.msg || '未知错误'));
+    }
+  } catch(e) { alert('删除异常: ' + e); }
+}
+
+async function testSub(name) {
+  name = decodeURIComponent(name);
+  if (!confirm(`立即抓取并测试订阅 "${name}" 吗？\n（仅解析不入库）`)) return;
+  try {
+    const resp = await fetch(`/api/subscriptions/${encodeURIComponent(name)}/test/`, {method: 'POST'});
+    const r = await resp.json();
+    if (r.code === 1) {
+      let msg = `解析到 ${r.count} 个节点`;
+      if (r.sample && r.sample.length) {
+        msg += '\n\n样例:';
+        r.sample.forEach(s => { msg += `\n  [${s.scheme}] ${s.proxy}`; });
+      }
+      alert(msg);
+    } else {
+      alert('测试失败: ' + (r.msg || '未知错误'));
+    }
+  } catch(e) { alert('测试异常: ' + e); }
+}
+
 // --- Audit Logs ---
 async function loadAuditLogs(page) {
   if (page) auditLogPage = page;
@@ -1164,7 +1385,7 @@ function toggleAuditAutoRefresh() {
 // --- Main ---
 async function refreshAll() {
   try {
-    await Promise.all([loadSources(), loadStats(), loadProxyList(), loadProxyTestList(), loadActivity(), loadAIConfig()]);
+    await Promise.all([loadSources(), loadSubscriptions(), loadStats(), loadProxyList(), loadProxyTestList(), loadActivity(), loadAIConfig()]);
     document.getElementById('lastUpdate').textContent = '更新于 ' + new Date().toLocaleTimeString();
   } catch(e) {
     console.error('refresh error:', e);

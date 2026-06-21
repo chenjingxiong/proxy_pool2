@@ -22,6 +22,7 @@ from handler.logHandler import LogHandler
 from handler.proxyHandler import ProxyHandler
 from handler.configHandler import ConfigHandler
 from handler.refreshHandler import runRefreshJob
+from helper.proxy import SCHEMES_ENCRYPTED
 
 
 def __runProxyFetch():
@@ -61,6 +62,64 @@ def __runAISearch():
         )
 
 
+def __runMihomoSync():
+    """把池中的加密协议节点同步到 mihomo 配置，并测试延迟"""
+    conf = ConfigHandler()
+    if not conf.mihomoEnabled:
+        return
+    from handler.mihomoHandler import MihomoClient
+    client = MihomoClient()
+
+    # 检查 mihomo 是否在线
+    if not client.is_available():
+        LogHandler("mihomo_sync").info("mihomo not available, skipping sync")
+        return
+
+    ph = ProxyHandler()
+    encrypted_proxies = [p for p in ph.getAll() if p.scheme in SCHEMES_ENCRYPTED]
+
+    if not encrypted_proxies:
+        return
+
+    # 生成并热加载配置
+    yaml_str = client.generate_config_yaml(encrypted_proxies)
+    if not client.reload_config(yaml_str):
+        LogHandler("mihomo_sync").warning("mihomo config reload failed")
+        return
+
+    LogHandler("mihomo_sync").info(
+        "mihomo synced %d encrypted proxies", len(encrypted_proxies)
+    )
+
+    # 延迟测试并回写 speed + last_status
+    for proxy in encrypted_proxies:
+        if not proxy.raw_uri:
+            continue
+        # 从 raw_uri 提取 Clash 条目 name 用于测试
+        from handler.mihomoHandler import _uri_to_clash_entry
+        entry = _uri_to_clash_entry(proxy.raw_uri, proxy.scheme)
+        if not entry:
+            continue
+        name = entry.get("name", "")
+        if not name:
+            continue
+        delay = client.test_proxy(name)
+        if delay > 0:
+            proxy.speed = round(delay / 1000.0, 3)  # ms → s
+            proxy.last_status = True
+            proxy.last_time = __now_str()
+        else:
+            proxy.last_status = False
+            proxy.last_time = __now_str()
+        proxy.check_count = (proxy.check_count or 0) + 1
+        ph.put(proxy)
+
+
+def __now_str():
+    from datetime import datetime
+    return datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
 def runScheduler():
     __runProxyFetch()
 
@@ -83,6 +142,11 @@ def runScheduler():
     if conf.aiSearchEnabled:
         scheduler.add_job(__runAISearch, 'cron', hour=conf.aiSearchHour, minute=0,
                           id="ai_proxy_search", name="AI代理搜索",
+                          max_instances=1, coalesce=True)
+
+    if conf.mihomoEnabled:
+        scheduler.add_job(__runMihomoSync, 'interval', minutes=conf.mihomoSyncIntervalMin,
+                          id="mihomo_sync", name="mihomo配置同步",
                           max_instances=1, coalesce=True)
 
     # 单一线程池足以串行/小并发执行上述任务；移除 ProcessPoolExecutor，避免额外 fork 进程

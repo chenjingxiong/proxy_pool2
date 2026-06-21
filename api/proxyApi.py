@@ -541,12 +541,15 @@ def apiProxiesList():
     sort_by = request.args.get("sort", "speed")
     sort_order = request.args.get("sort_order", "asc")
     https_filter = request.args.get("https", "")
+    scheme_filter = request.args.get("scheme", "")
 
     # 过滤
     if https_filter == "1":
         proxies = [p for p in proxies if p.https]
     elif https_filter == "0":
         proxies = [p for p in proxies if not p.https]
+    if scheme_filter:
+        proxies = [p for p in proxies if p.scheme == scheme_filter]
 
     # 排序
     reverse = (sort_order == "desc")
@@ -723,6 +726,362 @@ def apiProxyTest():
             action = "已从池中删除" if mark.get("action") == "deleted" else f"已标记失败（fail={mark.get('fail_count', '?')}）"
             return {"code": 0, "msg": f"代理 {proxy_str} 连接意外关闭", "pool_action": action}
         return {"code": 0, "msg": f"请求失败: {err_msg}"}
+
+
+# ===================== Subscription CRUD API =====================
+
+@app.route('/api/subscriptions/')
+def apiSubscriptionsList():
+    """列出所有用户自定义订阅/节点"""
+    from handler.sourceHandler import SourceLoader
+    loader = SourceLoader()
+    subs = loader.get_subscription_sources()
+    result = []
+    for s in subs:
+        result.append({
+            "name": s.name,
+            "type": s.type,
+            "description": s.description,
+            "enabled": s.enabled,
+            "url": s.url or "",
+            "content": (s.content or "")[:500],  # 截断长内容预览
+            "content_full_length": len(s.content or ""),
+            "source_file": s.source_file,
+        })
+    return {"subscriptions": result, "total": len(result)}
+
+
+@app.route('/api/subscriptions/<name>/')
+def apiSubscriptionGet(name):
+    """获取单个订阅详情"""
+    from handler.sourceHandler import SourceLoader
+    loader = SourceLoader()
+    s = loader.get_subscription(name)
+    if not s or s.type not in {"subscription", "clash_yaml", "single_node", "plain_uri_list"}:
+        return {"code": 0, "msg": "subscription not found"}, 404
+    return {
+        "name": s.name,
+        "type": s.type,
+        "description": s.description,
+        "enabled": s.enabled,
+        "url": s.url or "",
+        "content": s.content or "",
+        "source_file": s.source_file,
+    }
+
+
+@app.route('/api/subscriptions/', methods=['POST'])
+def apiSubscriptionCreate():
+    """新增订阅/节点
+    body: {name, type, url?, content?, description?, enabled?}
+    """
+    from handler.sourceHandler import SourceLoader
+    data = request.get_json(force=True) or {}
+    name = (data.get("name") or "").strip()
+    src_type = (data.get("type") or "").strip()
+    url = (data.get("url") or "").strip()
+    content = data.get("content") or ""
+    description = (data.get("description") or "").strip()
+    enabled = bool(data.get("enabled", True))
+
+    if not name or not src_type:
+        return {"code": 0, "msg": "name 和 type 必填"}, 400
+    try:
+        sub = SourceLoader().add_subscription(
+            name=name,
+            src_type=src_type,
+            url=url,
+            content=content,
+            description=description,
+            enabled=enabled,
+        )
+        return {"code": 1, "msg": "已新增", "subscription": _sub_to_dict(sub)}
+    except ValueError as e:
+        return {"code": 0, "msg": str(e)}, 400
+
+
+@app.route('/api/subscriptions/<name>/', methods=['PUT'])
+def apiSubscriptionUpdate(name):
+    """修改订阅/节点"""
+    from handler.sourceHandler import SourceLoader
+    data = request.get_json(force=True) or {}
+    kwargs = {
+        "type": data.get("type"),
+        "url": data.get("url"),
+        "content": data.get("content"),
+        "description": data.get("description"),
+        "enabled": data.get("enabled"),
+    }
+    # 过滤掉 None 值
+    kwargs = {k: v for k, v in kwargs.items() if v is not None}
+    try:
+        sub = SourceLoader().update_subscription(name, **kwargs)
+        return {"code": 1, "msg": "已修改", "subscription": _sub_to_dict(sub)}
+    except ValueError as e:
+        return {"code": 0, "msg": str(e)}, 404
+
+
+@app.route('/api/subscriptions/<name>/', methods=['DELETE'])
+def apiSubscriptionDelete(name):
+    """删除订阅/节点"""
+    from handler.sourceHandler import SourceLoader
+    ok = SourceLoader().remove_subscription(name)
+    if ok:
+        return {"code": 1, "msg": "已删除"}
+    return {"code": 0, "msg": "订阅不存在或无法删除"}, 404
+
+
+@app.route('/api/subscriptions/<name>/test/', methods=['POST'])
+def apiSubscriptionTest(name):
+    """立即抓取一次订阅进行测试（不入库，仅返回解析结果摘要）"""
+    from handler.sourceHandler import SourceLoader
+    from fetcher.subscriptionFetcher import fetch_subscription
+    loader = SourceLoader()
+    src = loader.get_subscription(name)
+    if not src or src.type not in {"subscription", "clash_yaml", "single_node", "plain_uri_list"}:
+        return {"code": 0, "msg": "subscription not found"}, 404
+
+    try:
+        count = 0
+        sample = []
+        for proxy_obj in fetch_subscription(src):
+            count += 1
+            if len(sample) < 5:
+                sample.append({
+                    "proxy": proxy_obj.proxy,
+                    "scheme": proxy_obj.scheme,
+                    "raw_uri": (proxy_obj.raw_uri or "")[:80],
+                })
+        return {
+            "code": 1,
+            "msg": f"解析到 {count} 个节点",
+            "count": count,
+            "sample": sample,
+        }
+    except Exception as e:
+        return {"code": 0, "msg": f"测试失败: {e}"}, 500
+
+
+def _sub_to_dict(sub):
+    if not sub:
+        return None
+    return {
+        "name": sub.name,
+        "type": sub.type,
+        "description": sub.description,
+        "enabled": sub.enabled,
+        "url": sub.url or "",
+        "content": sub.content or "",
+    }
+
+
+# ===================== Export API =====================
+
+@app.route('/export/clash/')
+def exportClash():
+    """导出 Clash YAML 配置"""
+    try:
+        import yaml
+    except ImportError:
+        return {"code": 0, "msg": "PyYAML 未安装"}, 500
+
+    only_available = request.args.get("available", "0") == "1"
+    scheme_filter = request.args.get("scheme", "")
+    count_limit = request.args.get("count", 0, type=int)
+
+    proxies = proxy_handler.getAll()
+    if only_available:
+        proxies = [p for p in proxies if p.last_status is not False]
+    if scheme_filter:
+        schemes = set(scheme_filter.split(","))
+        proxies = [p for p in proxies if p.scheme in schemes]
+    if count_limit and count_limit > 0:
+        proxies = proxies[:count_limit]
+
+    clash_proxies = []
+    names = set()
+    for p in proxies:
+        if p.scheme in ("http", "https", "socks5"):
+            entry = _proxy_to_clash_entry(p)
+        elif p.scheme in ("vmess", "vless", "trojan", "ss") and p.raw_uri:
+            entry = _uri_to_clash_entry(p.raw_uri, p.scheme)
+        else:
+            continue
+        if not entry:
+            continue
+        # 名称去重
+        base_name = entry.get("name", "node")
+        name = base_name
+        i = 1
+        while name in names:
+            name = f"{base_name}-{i}"
+            i += 1
+        entry["name"] = name
+        names.add(name)
+        clash_proxies.append(entry)
+
+    proxy_names = [p["name"] for p in clash_proxies] or ["DIRECT"]
+    config = {
+        "mixed-port": 7890,
+        "proxies": clash_proxies,
+        "proxy-groups": [
+            {
+                "name": "pool-selector",
+                "type": "select",
+                "proxies": proxy_names,
+            }
+        ],
+        "rules": ["MATCH,pool-selector"],
+    }
+
+    yaml_str = yaml.safe_dump(config, allow_unicode=True, sort_keys=False)
+    return Response(
+        yaml_str,
+        mimetype='text/yaml',
+        headers={"Content-Disposition": "attachment; filename=proxy_pool_clash.yaml"},
+    )
+
+
+@app.route('/export/v2ray/')
+def exportV2Ray():
+    """导出 base64 编码的 URI 列表（v2rayN/Shadowrocket 等兼容）"""
+    import base64 as _b64
+    only_available = request.args.get("available", "0") == "1"
+    scheme_filter = request.args.get("scheme", "")
+    count_limit = request.args.get("count", 0, type=int)
+
+    proxies = proxy_handler.getAll()
+    if only_available:
+        proxies = [p for p in proxies if p.last_status is not False]
+    if scheme_filter:
+        schemes = set(scheme_filter.split(","))
+        proxies = [p for p in proxies if p.scheme in schemes]
+    if count_limit and count_limit > 0:
+        proxies = proxies[:count_limit]
+
+    lines = []
+    for p in proxies:
+        if p.scheme in ("vmess", "vless", "trojan", "ss", "socks5") and p.raw_uri:
+            lines.append(p.raw_uri)
+        elif p.scheme in ("http", "https"):
+            lines.append(f"http://{p.proxy}")
+    body = "\n".join(lines)
+    encoded = _b64.b64encode(body.encode()).decode()
+    return Response(
+        encoded,
+        mimetype='text/plain',
+        headers={"Content-Disposition": "attachment; filename=proxy_pool_v2ray.txt"},
+    )
+
+
+def _proxy_to_clash_entry(proxy):
+    """把 HTTP/SOCKS5 Proxy 对象转为 Clash proxy 条目"""
+    host, _, port = proxy.proxy.partition(":")
+    try:
+        port_int = int(port)
+    except ValueError:
+        return None
+    entry = {
+        "name": f"{host}:{port}",
+        "type": "socks5" if proxy.scheme == "socks5" else "http",
+        "server": host,
+        "port": port_int,
+    }
+    return entry
+
+
+def _uri_to_clash_entry(uri, scheme):
+    """把加密协议 URI 转为 Clash proxy 条目"""
+    from helper.protocolParser import parse_proxy_uri
+    node = parse_proxy_uri(uri)
+    if not node:
+        return None
+    try:
+        return _node_dict_to_clash(node, uri)
+    except Exception:
+        return None
+
+
+def _node_dict_to_clash(node, uri):
+    """从解析后的节点 dict 构造 Clash 条目（最小可用字段）"""
+    scheme = node["scheme"]
+    host = node["host"]
+    port = int(node["port"])
+    name = node.get("name") or f"{host}:{port}"
+    entry = {
+        "name": name,
+        "type": scheme,
+        "server": host,
+        "port": port,
+    }
+    # 从 URI 提取关键参数（仅 vmess 需要 uuid+alterId+network）
+    try:
+        if scheme == "vmess":
+            import base64 as _b64
+            import json as _json
+            payload = uri[len("vmess://"):]
+            missing = len(payload) % 4
+            if missing:
+                payload += "=" * (4 - missing)
+            info = _json.loads(_b64.b64decode(payload).decode("utf-8", errors="ignore"))
+            entry["uuid"] = info.get("id", "")
+            entry["alterId"] = int(info.get("aid", 0) or 0)
+            entry["network"] = info.get("net", "tcp") or "tcp"
+            if info.get("tls"):
+                entry["tls"] = True
+                if info.get("sni"):
+                    entry["servername"] = info["sni"]
+            if entry["network"] == "ws":
+                ws_opts = {}
+                if info.get("path"):
+                    ws_opts["path"] = info["path"]
+                if info.get("host"):
+                    ws_opts["headers"] = {"Host": info["host"]}
+                if ws_opts:
+                    entry["ws-opts"] = ws_opts
+        elif scheme == "vless":
+            from urllib.parse import urlparse, parse_qs, unquote
+            p = urlparse(uri)
+            q = {k: v[0] for k, v in parse_qs(p.query).items()}
+            entry["uuid"] = p.username or ""
+            entry["network"] = q.get("type", "tcp")
+            if q.get("security") == "tls":
+                entry["tls"] = True
+            if q.get("sni"):
+                entry["servername"] = q["sni"]
+            if entry["network"] == "ws":
+                ws_opts = {}
+                if q.get("path"):
+                    ws_opts["path"] = q["path"]
+                if q.get("host"):
+                    ws_opts["headers"] = {"Host": q["host"]}
+                if ws_opts:
+                    entry["ws-opts"] = ws_opts
+        elif scheme == "trojan":
+            from urllib.parse import urlparse, parse_qs
+            p = urlparse(uri)
+            q = {k: v[0] for k, v in parse_qs(p.query).items()}
+            entry["password"] = p.username or ""
+            if q.get("sni"):
+                entry["sni"] = q["sni"]
+            if q.get("type"):
+                entry["network"] = q["type"]
+        elif scheme == "ss":
+            import base64 as _b64
+            from urllib.parse import urlparse
+            p = urlparse(uri)
+            userinfo = p.username or ""
+            try:
+                decoded = _b64.b64decode(userinfo + "==").decode("utf-8", errors="ignore")
+            except Exception:
+                decoded = userinfo
+            if ":" in decoded:
+                cipher, password = decoded.split(":", 1)
+                entry["cipher"] = cipher
+                entry["password"] = password
+    except Exception:
+        pass
+    return entry
 
 
 def runFlask():

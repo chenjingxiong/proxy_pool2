@@ -13,8 +13,9 @@ from helper.check import DoValidator
 from handler.logHandler import LogHandler
 from handler.proxyHandler import ProxyHandler
 from fetcher.proxyFetcher import ProxyFetcher
+from fetcher.subscriptionFetcher import fetch_subscription
 from handler.configHandler import ConfigHandler
-from handler.sourceHandler import SourceLoader
+from handler.sourceHandler import SourceLoader, SUBSCRIPTION_TYPES
 
 
 def generic_url_fetcher(source_config):
@@ -64,7 +65,9 @@ class _ThreadFetcher(Thread):
         self.source_config = source_config
         self.log = LogHandler("fetcher")
 
-        if source_config and source_config.type != 'builtin':
+        if source_config and source_config.type in SUBSCRIPTION_TYPES:
+            self.fetcher = lambda: fetch_subscription(source_config)
+        elif source_config and source_config.type != 'builtin':
             self.fetcher = lambda: generic_url_fetcher(source_config)
         else:
             self.fetcher = getattr(ProxyFetcher, fetch_source, None)
@@ -74,17 +77,29 @@ class _ThreadFetcher(Thread):
         total = 0
         accepted = 0
         try:
-            for proxy in self.fetcher():
+            for item in self.fetcher():
                 total += 1
-                proxy = proxy.strip()
-                if not DoValidator.preValidator(proxy):
-                    continue
-                accepted += 1
-                if proxy in self.proxy_dict:
-                    self.proxy_dict[proxy].add_source(self.fetch_source)
+                # 订阅抓取器直接返回 Proxy 对象
+                if isinstance(item, Proxy):
+                    proxy_key_str = item.proxy
+                    if not DoValidator.preValidator(proxy_key_str):
+                        continue
+                    accepted += 1
+                    if proxy_key_str in self.proxy_dict:
+                        self.proxy_dict[proxy_key_str].add_source(self.fetch_source)
+                    else:
+                        self.proxy_dict[proxy_key_str] = item
                 else:
-                    self.proxy_dict[proxy] = Proxy(
-                        proxy, source=self.fetch_source)
+                    # 内置 / 通用抓取器返回字符串
+                    proxy = item.strip()
+                    if not DoValidator.preValidator(proxy):
+                        continue
+                    accepted += 1
+                    if proxy in self.proxy_dict:
+                        self.proxy_dict[proxy].add_source(self.fetch_source)
+                    else:
+                        self.proxy_dict[proxy] = Proxy(
+                            proxy, source=self.fetch_source)
             self.log.info(
                 "ProxyFetch - {func}: complete, accepted {accepted}/{total}".format(
                     func=self.fetch_source, accepted=accepted, total=total))

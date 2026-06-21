@@ -189,3 +189,20 @@ PROXY_WEIGHT_RECENCY = 0.7
 
 # 速度权重：代理响应速度越快，权重越高
 PROXY_WEIGHT_SPEED = 0.3
+
+# ############# mihomo (Clash.Meta) config #################
+# 是否启用 mihomo 集成（启用后加密协议 vmess/vless/trojan/ss 真正可用）
+MIHOMO_ENABLED = True
+
+# mihomo RESTful API URL（容器内通过服务名访问）
+MIHOMO_API_URL = "http://mihomo:9090"
+
+# mihomo SOCKS5 出口（容器内通过服务名访问）
+MIHOMO_SOCKS_HOST = "mihomo"
+MIHOMO_SOCKS_PORT = 7890
+
+# mihomo 配置同步间隔，分钟 — scheduler 定期把池中加密协议同步到 mihomo 配置
+MIHOMO_SYNC_INTERVAL_MIN = 10
+
+# mihomo 节点延迟测试 URL
+MIHOMO_TEST_URL = "https://www.gstatic.com/generate_204"

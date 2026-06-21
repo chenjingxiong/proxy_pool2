@@ -45,6 +45,11 @@ HEADER = {
 
 IP_REGEX = re.compile(r"(.*:.*@)?\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}")
 
+# 加密协议 Redis key 格式: scheme:ip:port:md5hash[:8]
+ENCRYPTED_KEY_REGEX = re.compile(
+    r"(vmess|vless|trojan|ss):\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}:\d{1,5}:[a-f0-9]{8}"
+)
+
 # IP 文本正则（用于 ipip.net / ipify.org 内容校验）
 IP_TEXT_REGEX = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 
@@ -110,6 +115,7 @@ class ProxyValidator(withMetaclass(Singleton)):
     pre_validator = []
     http_validator = []
     https_validator = []
+    socks5_validator = []
 
     @classmethod
     def addPreValidator(cls, func):
@@ -126,11 +132,20 @@ class ProxyValidator(withMetaclass(Singleton)):
         cls.https_validator.append(func)
         return func
 
+    @classmethod
+    def addSocks5Validator(cls, func):
+        cls.socks5_validator.append(func)
+        return func
+
 
 @ProxyValidator.addPreValidator
 def formatValidator(proxy):
-    """检查代理格式"""
-    return True if IP_REGEX.fullmatch(proxy) else False
+    """检查代理格式：支持 ip:port 及 scheme:ip:port:hash（加密协议）"""
+    if IP_REGEX.fullmatch(proxy):
+        return True
+    if ENCRYPTED_KEY_REGEX.fullmatch(proxy):
+        return True
+    return False
 
 
 @ProxyValidator.addHttpValidator
@@ -163,6 +178,31 @@ def httpsTimeOutValidator(proxy):
         try:
             r = get(url, headers=headers, proxies=proxies,
                     timeout=timeout, verify=False)
+            if not _is_content_valid(url, r):
+                return False
+        except Exception:
+            return False
+    return True
+
+
+# SOCKS5 验证目标
+SOCKS5_VALIDATE_URLS = [
+    "http://www.baidu.com",
+    "https://api.ipify.org",
+]
+
+
+@ProxyValidator.addSocks5Validator
+def socks5TimeOutValidator(proxy):
+    """SOCKS5验证：通过 socks5:// 代理访问目标网站，所有目标必须全部返回200且内容真实才通过"""
+    proxies = {"http": "socks5://{proxy}".format(proxy=proxy),
+               "https": "socks5h://{proxy}".format(proxy=proxy)}
+    headers = _get_random_headers()
+    timeout = _get_timeout()
+
+    for url in SOCKS5_VALIDATE_URLS:
+        try:
+            r = get(url, headers=headers, proxies=proxies, timeout=timeout)
             if not _is_content_valid(url, r):
                 return False
         except Exception:

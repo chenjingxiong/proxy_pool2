@@ -370,3 +370,34 @@ class ConfigHandler(withMetaclass(Singleton)):
         return float(self._system_cfg('weight_speed',
                                        os.getenv("PROXY_WEIGHT_SPEED", setting.PROXY_WEIGHT_SPEED)))
 
+    # ==================== mihomo config ====================
+
+    @LazyProperty
+    def mihomoEnabled(self):
+        env_val = os.getenv("MIHOMO_ENABLED", "").lower()
+        if env_val in ("1", "true", "yes"):
+            return True
+        if env_val in ("0", "false", "no"):
+            return False
+        return bool(setting.MIHOMO_ENABLED)
+
+    @LazyProperty
+    def mihomoApiUrl(self):
+        return os.getenv("MIHOMO_API_URL", setting.MIHOMO_API_URL).rstrip("/")
+
+    @LazyProperty
+    def mihomoSocksHost(self):
+        return os.getenv("MIHOMO_SOCKS_HOST", setting.MIHOMO_SOCKS_HOST)
+
+    @LazyProperty
+    def mihomoSocksPort(self):
+        return int(os.getenv("MIHOMO_SOCKS_PORT", str(setting.MIHOMO_SOCKS_PORT)))
+
+    @LazyProperty
+    def mihomoSyncIntervalMin(self):
+        return int(os.getenv("MIHOMO_SYNC_INTERVAL_MIN", str(setting.MIHOMO_SYNC_INTERVAL_MIN)))
+
+    @LazyProperty
+    def mihomoTestUrl(self):
+        return os.getenv("MIHOMO_TEST_URL", setting.MIHOMO_TEST_URL)
+
