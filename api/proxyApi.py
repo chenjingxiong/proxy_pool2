@@ -1026,6 +1026,7 @@ def _node_dict_to_clash(node, uri):
             info = _json.loads(_b64.b64decode(payload).decode("utf-8", errors="ignore"))
             entry["uuid"] = info.get("id", "")
             entry["alterId"] = int(info.get("aid", 0) or 0)
+            entry["cipher"] = info.get("scy", "auto") or "auto"
             entry["network"] = info.get("net", "tcp") or "tcp"
             if info.get("tls"):
                 entry["tls"] = True

@@ -180,6 +180,7 @@ def _uri_to_clash_entry(uri, scheme):
                 "port": int(info.get("port", 0)),
                 "uuid": info.get("id", ""),
                 "alterId": int(info.get("aid", 0) or 0),
+                "cipher": info.get("scy", "auto") or "auto",
                 "network": info.get("net", "tcp") or "tcp",
             }
             if info.get("tls"):
